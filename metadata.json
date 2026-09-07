@@ -1,0 +1,6 @@
+{
+  "name": "Generador de Menús",
+  "description": "Herramienta para profesionales de nutrición que calcula equivalentes del Sistema Mexicano de Alimentos Equivalentes (SMAE 5ta edición) y genera automáticamente 3 opciones de menús balanceados por tiempo de comida con IA, respetando preferencias y evitando repeticiones.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
