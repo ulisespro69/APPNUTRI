@@ -15,7 +15,7 @@ import {
   PageNumber,
 } from 'docx';
 import { GeneratedPlan, PatientInfo, MacroNutrientSummary, MealOptionLetter } from '../types';
-import { normalizeOptionSelection, calculateRowTotal, calculateColumnTotal, calculateGrandTotalEquivalents } from './nutritionCalculations';
+import { normalizeOptionSelection, calculateRowTotal, calculateColumnTotal, calculateGrandTotalEquivalents, calculateBmiInfo, calculateSkinfoldSums } from './nutritionCalculations';
 import { TableGridState, SMAE_GROUPS, MEAL_COLUMNS } from '../data/smaeData';
 
 export async function exportPlanToWord(
@@ -83,88 +83,121 @@ export async function exportPlanToWord(
   sectionsChildren.push(new Paragraph({ spacing: { after: 180 } }));
 
   // ==========================================
-  // 2. PATIENT INFO & MACRO CARD (Identical to PDF)
+  // 2. MARCO CLÍNICO: ANTROPOMETRÍA Y TABLA DE MACRONUTRIENTES
   // Left: #F8FAFC, Right: #ECFDF5 with border #A7F3D0
   // ==========================================
   const dateStr = patientInfo.date || new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+  const bmiInfo = calculateBmiInfo(patientInfo.height, patientInfo.weight);
+  const skinfoldSums = calculateSkinfoldSums(patientInfo.skinfolds);
+  const displayHeight = patientInfo.height
+    ? /\d$/.test(patientInfo.height.trim())
+      ? parseFloat(patientInfo.height) > 3
+        ? `${patientInfo.height.trim()} cm`
+        : `${patientInfo.height.trim()} m`
+      : patientInfo.height
+    : '—';
+
+  const proteinKcal = Math.round(macros.totalProteinGrams * 4);
+  const lipidsKcal = Math.round(macros.totalLipidsGrams * 9);
+  const carbsKcal = Math.round(macros.totalCarbsGrams * 4);
 
   const patientLeftCell = new TableCell({
-    width: { size: 55, type: WidthType.PERCENTAGE },
+    width: { size: 50, type: WidthType.PERCENTAGE },
     shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-    margins: { top: 140, bottom: 140, left: 180, right: 140 },
+    margins: { top: 120, bottom: 120, left: 160, right: 140 },
     children: [
       new Paragraph({
         children: [
-          new TextRun({ text: 'Paciente: ', bold: true, size: 21, color: '0F172A', font: 'Helvetica' }),
-          new TextRun({ text: patientInfo.name || 'Paciente', bold: true, size: 21, color: '0F172A', font: 'Helvetica' }),
+          new TextRun({ text: 'EXPEDIENTE CLÍNICO DEL PACIENTE', bold: true, size: 19, color: '0F172A', font: 'Helvetica' }),
         ],
       }),
       new Paragraph({
-        spacing: { before: 60 },
+        spacing: { before: 40 },
         children: [
-          new TextRun({ text: 'Fecha: ', bold: true, size: 19, color: '475569', font: 'Helvetica' }),
-          new TextRun({ text: dateStr, size: 19, color: '475569', font: 'Helvetica' }),
+          new TextRun({ text: 'Paciente: ', bold: true, size: 20, color: '0F172A', font: 'Helvetica' }),
+          new TextRun({ text: patientInfo.name && patientInfo.name.trim() ? patientInfo.name.trim() : 'Plan Personalizado', bold: true, size: 20, color: '0F172A', font: 'Helvetica' }),
         ],
       }),
-      ...(patientInfo.goal
-        ? [
-            new Paragraph({
-              spacing: { before: 40 },
-              children: [
-                new TextRun({ text: 'Objetivo: ', bold: true, size: 19, color: '475569', font: 'Helvetica' }),
-                new TextRun({ text: patientInfo.goal, size: 19, color: '475569', font: 'Helvetica' }),
-              ],
-            }),
-          ]
-        : []),
+      new Paragraph({
+        spacing: { before: 30 },
+        children: [
+          new TextRun({ text: 'Fecha: ', bold: true, size: 17, color: '475569', font: 'Helvetica' }),
+          new TextRun({ text: dateStr, size: 17, color: '475569', font: 'Helvetica' }),
+        ],
+      }),
+      new Paragraph({
+        spacing: { before: 30 },
+        children: [
+          new TextRun({ text: 'Objetivo: ', bold: true, size: 17, color: '047857', font: 'Helvetica' }),
+          new TextRun({ text: patientInfo.goal && patientInfo.goal.trim() ? patientInfo.goal.trim() : 'Mantenimiento y Prescripción Dietoterapéutica', size: 17, color: '334155', font: 'Helvetica' }),
+        ],
+      }),
+      new Paragraph({
+        spacing: { before: 20 },
+        children: [
+          new TextRun({ text: 'Prescripción Dietoterapéutica bajo SMAE (5ta Edición)', italics: true, size: 15, color: '64748B', font: 'Helvetica' }),
+        ],
+      }),
     ],
   });
 
   const macrosRightCell = new TableCell({
-    width: { size: 45, type: WidthType.PERCENTAGE },
+    width: { size: 50, type: WidthType.PERCENTAGE },
     shading: { fill: 'ECFDF5', type: ShadingType.CLEAR }, // emerald-50 identical to PDF
-    margins: { top: 140, bottom: 140, left: 180, right: 180 },
+    margins: { top: 120, bottom: 120, left: 160, right: 160 },
     children: [
       new Paragraph({
         children: [
-          new TextRun({ text: 'Energía: ', bold: true, size: 21, color: '0D3141', font: 'Helvetica' }),
-          new TextRun({ text: `${Math.round(macros.totalKcal)} kcal`, bold: true, size: 21, color: '0D3141', font: 'Helvetica' }),
+          new TextRun({ text: 'TABLA DE KCAL, PROTEÍNAS, GRASAS Y HC', bold: true, size: 19, color: '065F46', font: 'Helvetica' }),
         ],
       }),
       new Paragraph({
-        spacing: { before: 50 },
+        spacing: { before: 40 },
         children: [
-          new TextRun({ text: 'Proteínas: ', bold: true, size: 19, color: '0D3141', font: 'Helvetica' }),
-          new TextRun({
-            text: `${Math.round(macros.totalProteinGrams)}g (${Math.round(macros.proteinKcalPercent)}%)`,
-            size: 19,
-            color: '0D3141',
-            font: 'Helvetica',
-          }),
+          new TextRun({ text: 'Calorías Totales (Kcal): ', bold: true, size: 19, color: '064E3B', font: 'Helvetica' }),
+          new TextRun({ text: `${Math.round(macros.totalKcal)} kcal (100%)`, bold: true, size: 19, color: '064E3B', font: 'Helvetica' }),
         ],
       }),
       new Paragraph({
         spacing: { before: 30 },
         children: [
-          new TextRun({ text: 'Lípidos: ', bold: true, size: 19, color: '0D3141', font: 'Helvetica' }),
+          new TextRun({ text: '• Proteínas: ', bold: true, size: 17, color: '0D3141', font: 'Helvetica' }),
           new TextRun({
-            text: `${Math.round(macros.totalLipidsGrams)}g (${Math.round(macros.lipidsKcalPercent)}%)`,
-            size: 19,
+            text: `${macros.totalProteinGrams} g  |  ${proteinKcal} kcal  |  ${macros.proteinKcalPercent}% VET`,
+            size: 17,
             color: '0D3141',
             font: 'Helvetica',
           }),
         ],
       }),
       new Paragraph({
-        spacing: { before: 30 },
+        spacing: { before: 20 },
         children: [
-          new TextRun({ text: 'Carbohidratos: ', bold: true, size: 19, color: '0D3141', font: 'Helvetica' }),
+          new TextRun({ text: '• Grasas (Lípidos): ', bold: true, size: 17, color: '0D3141', font: 'Helvetica' }),
           new TextRun({
-            text: `${Math.round(macros.totalCarbsGrams)}g (${Math.round(macros.carbsKcalPercent)}%)`,
-            size: 19,
+            text: `${macros.totalLipidsGrams} g  |  ${lipidsKcal} kcal  |  ${macros.lipidsKcalPercent}% VET`,
+            size: 17,
             color: '0D3141',
             font: 'Helvetica',
           }),
+        ],
+      }),
+      new Paragraph({
+        spacing: { before: 20 },
+        children: [
+          new TextRun({ text: '• HC (Carbohidratos): ', bold: true, size: 17, color: '0D3141', font: 'Helvetica' }),
+          new TextRun({
+            text: `${macros.totalCarbsGrams} g  |  ${carbsKcal} kcal  |  ${macros.carbsKcalPercent}% VET`,
+            size: 17,
+            color: '0D3141',
+            font: 'Helvetica',
+          }),
+        ],
+      }),
+      new Paragraph({
+        spacing: { before: 20 },
+        children: [
+          new TextRun({ text: `Total de equivalentes prescritos: ${macros.totalEquivalents} eq / día`, italics: true, size: 15, color: '047857', font: 'Helvetica' }),
         ],
       }),
     ],
@@ -184,14 +217,473 @@ export async function exportPlanToWord(
   });
 
   sectionsChildren.push(patientCardTable);
-  sectionsChildren.push(new Paragraph({ spacing: { after: 160 } }));
+  sectionsChildren.push(new Paragraph({ spacing: { after: 120 } }));
+
+  // =========================================================================
+  // 2.5 TABLA UNIFICADA: VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL
+  // Una sola tabla que unifica Estatura, Masa Corporal, Edad, IMC y los 4 componentes
+  // =========================================================================
+  const unifiedAnthropoCompTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+      bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+      left: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+      right: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+      insideHorizontal: { style: BorderStyle.SINGLE, size: 2, color: 'E2E8F0' },
+      insideVertical: { style: BorderStyle.SINGLE, size: 2, color: 'E2E8F0' },
+    },
+    rows: [
+      // Fila 1: Encabezado Principal
+      new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: 20,
+            shading: { fill: '0F172A', type: ShadingType.CLEAR }, // slate-900
+            margins: { top: 80, bottom: 80, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: 'VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL (4 COMPONENTES)',
+                    bold: true,
+                    size: 18,
+                    color: 'FFFFFF',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+
+      // Fila 2: Parámetros Antropométricos (Sexo, Edad, Masa Corporal, Estatura, IMC)
+      new TableRow({
+        children: [
+          // Sexo
+          new TableCell({
+            columnSpan: 4,
+            width: { size: 20, type: WidthType.PERCENTAGE },
+            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+            margins: { top: 70, bottom: 70, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'SEXO', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 20 },
+                children: [
+                  new TextRun({
+                    text: patientInfo.gender || '—',
+                    bold: true,
+                    size: 18,
+                    color: '0F172A',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+          // Edad
+          new TableCell({
+            columnSpan: 4,
+            width: { size: 20, type: WidthType.PERCENTAGE },
+            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+            margins: { top: 70, bottom: 70, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'EDAD', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 20 },
+                children: [
+                  new TextRun({
+                    text: patientInfo.age ? `${patientInfo.age} años` : '—',
+                    bold: true,
+                    size: 18,
+                    color: '0F172A',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+          // Masa Corporal (Peso)
+          new TableCell({
+            columnSpan: 4,
+            width: { size: 20, type: WidthType.PERCENTAGE },
+            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+            margins: { top: 70, bottom: 70, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'MASA CORPORAL (PESO)', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 20 },
+                children: [
+                  new TextRun({
+                    text: patientInfo.weight || '—',
+                    bold: true,
+                    size: 18,
+                    color: '0F172A',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+          // Estatura (Talla)
+          new TableCell({
+            columnSpan: 4,
+            width: { size: 20, type: WidthType.PERCENTAGE },
+            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+            margins: { top: 70, bottom: 70, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'ESTATURA (TALLA)', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 20 },
+                children: [
+                  new TextRun({
+                    text: displayHeight,
+                    bold: true,
+                    size: 18,
+                    color: '0F172A',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+          // IMC
+          new TableCell({
+            columnSpan: 4,
+            width: { size: 20, type: WidthType.PERCENTAGE },
+            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+            margins: { top: 70, bottom: 70, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'ÍNDICE MASA CORP. (IMC)', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 20 },
+                children: [
+                  new TextRun({
+                    text: bmiInfo ? `${bmiInfo.formatted} (${bmiInfo.category})` : '—',
+                    bold: true,
+                    size: 17,
+                    color: '047857',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+
+      // Fila: Sub-encabezado de Sumatoria de Pliegues Cutáneos
+      new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: 20,
+            shading: { fill: 'ECFDF5', type: ShadingType.CLEAR }, // emerald-50
+            margins: { top: 60, bottom: 60, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: 'SUMATORIA DE PLIEGUES CUTÁNEOS',
+                    bold: true,
+                    size: 15,
+                    color: '065F46', // emerald-800
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+
+      // Fila: 2 Columnas para Σ3 y Σ6 Pliegues (columnSpan 10 cada una)
+      new TableRow({
+        children: [
+          // Σ3 Pliegues
+          new TableCell({
+            columnSpan: 10,
+            width: { size: 50, type: WidthType.PERCENTAGE },
+            shading: { fill: 'F0FDF4', type: ShadingType.CLEAR }, // emerald-50
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: 'SUMATORIA DE Σ3 PLIEGUES (mm)',
+                    bold: true,
+                    size: 16,
+                    color: '065F46',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 25 },
+                children: [
+                  new TextRun({
+                    text: 'Subescapular + Supraespinal + Abdominal',
+                    italics: true,
+                    size: 13,
+                    color: '64748B',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 40 },
+                children: [
+                  new TextRun({
+                    text: skinfoldSums.sum3 || '— mm',
+                    bold: true,
+                    size: 20,
+                    color: '047857',
+                    font: 'Helvetica',
+                  }),
+                  new TextRun({
+                    text: skinfoldSums.count3 > 0
+                      ? (skinfoldSums.isComplete3 ? '  (3/3 completados)' : `  (${skinfoldSums.count3}/3 capturados)`)
+                      : '',
+                    italics: true,
+                    size: 13,
+                    color: '64748B',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+
+          // Σ6 Pliegues
+          new TableCell({
+            columnSpan: 10,
+            width: { size: 50, type: WidthType.PERCENTAGE },
+            shading: { fill: 'F0FDFA', type: ShadingType.CLEAR }, // teal-50
+            margins: { top: 90, bottom: 90, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: 'SUMATORIA DE Σ6 PLIEGUES (mm)',
+                    bold: true,
+                    size: 16,
+                    color: '0F766E',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 25 },
+                children: [
+                  new TextRun({
+                    text: 'Tríceps + Subescapular + Supraespinal + Abdominal + Muslo Frontal + Pantorrilla Medial',
+                    italics: true,
+                    size: 13,
+                    color: '64748B',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 40 },
+                children: [
+                  new TextRun({
+                    text: skinfoldSums.sum6 || '— mm',
+                    bold: true,
+                    size: 20,
+                    color: '0F766E',
+                    font: 'Helvetica',
+                  }),
+                  new TextRun({
+                    text: skinfoldSums.count6 > 0
+                      ? (skinfoldSums.isComplete6 ? '  (6/6 completados)' : `  (${skinfoldSums.count6}/6 capturados)`)
+                      : '',
+                    italics: true,
+                    size: 13,
+                    color: '64748B',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+
+      // Fila 3: Sub-encabezado de Composición Corporal
+      new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: 20,
+            shading: { fill: 'F1F5F9', type: ShadingType.CLEAR }, // slate-100
+            margins: { top: 50, bottom: 50, left: 140, right: 140 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: 'COMPOSICIÓN CORPORAL (FRACCIONAMIENTO 4 COMPONENTES)',
+                    bold: true,
+                    size: 15,
+                    color: '334155',
+                    font: 'Helvetica',
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+
+      // Fila 4: 4 Columnas: Masa Grasa, Masa Muscular, Masa Ósea, Masa Residual
+      new TableRow({
+        children: [
+          // Masa Grasa
+          new TableCell({
+            columnSpan: 5,
+            width: { size: 25, type: WidthType.PERCENTAGE },
+            shading: { fill: 'FFFBEB', type: ShadingType.CLEAR }, // amber-50
+            margins: { top: 90, bottom: 90, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'Masa Grasa', bold: true, size: 17, color: '92400E', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 30 },
+                children: [
+                  new TextRun({ text: '% de Grasa: ', bold: true, size: 16, color: '475569', font: 'Helvetica' }),
+                  new TextRun({ text: patientInfo.fatPercent ? `${patientInfo.fatPercent}%` : '—', bold: true, size: 17, color: '0F172A', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 20 },
+                children: [
+                  new TextRun({ text: 'Kg de Grasa: ', bold: true, size: 16, color: '475569', font: 'Helvetica' }),
+                  new TextRun({ text: patientInfo.fatKg ? `${patientInfo.fatKg} kg` : '—', bold: true, size: 17, color: '0F172A', font: 'Helvetica' }),
+                ],
+              }),
+            ],
+          }),
+          // Masa Muscular
+          new TableCell({
+            columnSpan: 5,
+            width: { size: 25, type: WidthType.PERCENTAGE },
+            shading: { fill: 'FFF1F2', type: ShadingType.CLEAR }, // rose-50
+            margins: { top: 90, bottom: 90, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'Masa Muscular', bold: true, size: 17, color: '9F1239', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 30 },
+                children: [
+                  new TextRun({ text: '% de Músculo: ', bold: true, size: 16, color: '475569', font: 'Helvetica' }),
+                  new TextRun({ text: patientInfo.musclePercent ? `${patientInfo.musclePercent}%` : '—', bold: true, size: 17, color: '0F172A', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 20 },
+                children: [
+                  new TextRun({ text: 'Kg de Músculo: ', bold: true, size: 16, color: '475569', font: 'Helvetica' }),
+                  new TextRun({ text: patientInfo.muscleKg ? `${patientInfo.muscleKg} kg` : '—', bold: true, size: 17, color: '0F172A', font: 'Helvetica' }),
+                ],
+              }),
+            ],
+          }),
+          // Masa Ósea
+          new TableCell({
+            columnSpan: 5,
+            width: { size: 25, type: WidthType.PERCENTAGE },
+            shading: { fill: 'F0F9FF', type: ShadingType.CLEAR }, // sky-50
+            margins: { top: 90, bottom: 90, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'Masa Ósea (Hueso)', bold: true, size: 17, color: '075985', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 30 },
+                children: [
+                  new TextRun({ text: '% de Hueso: ', bold: true, size: 16, color: '475569', font: 'Helvetica' }),
+                  new TextRun({ text: patientInfo.bonePercent ? `${patientInfo.bonePercent}%` : '—', bold: true, size: 17, color: '0F172A', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 20 },
+                children: [
+                  new TextRun({ text: 'Kg de Hueso: ', bold: true, size: 16, color: '475569', font: 'Helvetica' }),
+                  new TextRun({ text: patientInfo.boneKg ? `${patientInfo.boneKg} kg` : '—', bold: true, size: 17, color: '0F172A', font: 'Helvetica' }),
+                ],
+              }),
+            ],
+          }),
+          // Masa Residual
+          new TableCell({
+            columnSpan: 5,
+            width: { size: 25, type: WidthType.PERCENTAGE },
+            shading: { fill: 'FAF5FF', type: ShadingType.CLEAR }, // purple-50
+            margins: { top: 90, bottom: 90, left: 120, right: 120 },
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'Masa Residual', bold: true, size: 17, color: '6B21A8', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 30 },
+                children: [
+                  new TextRun({ text: '% de Residual: ', bold: true, size: 16, color: '475569', font: 'Helvetica' }),
+                  new TextRun({ text: patientInfo.residualPercent ? `${patientInfo.residualPercent}%` : '—', bold: true, size: 17, color: '0F172A', font: 'Helvetica' }),
+                ],
+              }),
+              new Paragraph({
+                spacing: { before: 20 },
+                children: [
+                  new TextRun({ text: 'Kg Residual: ', bold: true, size: 16, color: '475569', font: 'Helvetica' }),
+                  new TextRun({ text: patientInfo.residualKg ? `${patientInfo.residualKg} kg` : '—', bold: true, size: 17, color: '0F172A', font: 'Helvetica' }),
+                ],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+
+  sectionsChildren.push(unifiedAnthropoCompTable);
+  sectionsChildren.push(new Paragraph({ spacing: { after: 140 } }));
 
   // ==========================================
-  // 3. RECOMENDACIONES GENERALES (Identical to PDF)
-  // Yellow background #FEFCE8, Border #FEF08A, Text #713F12
+  // 3. INDICACIONES Y NOTAS GENERALES (Identical to PDF)
+  // Se imprime ÚNICAMENTE si el usuario ingresó información en el cuadro de notas
   // ==========================================
-  const generalNotes = plan.patientNotes || patientInfo.notes;
-  if (generalNotes) {
+  const userNotes = patientInfo.notes?.trim();
+  if (userNotes) {
     const notesTable = new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
       borders: {
@@ -212,8 +704,8 @@ export async function exportPlanToWord(
               children: [
                 new Paragraph({
                   children: [
-                    new TextRun({ text: 'Recomendaciones: ', bold: true, italics: true, size: 19, color: '713F12', font: 'Helvetica' }),
-                    new TextRun({ text: generalNotes, italics: true, size: 19, color: '713F12', font: 'Helvetica' }),
+                    new TextRun({ text: 'Indicaciones y notas del paciente: ', bold: true, italics: true, size: 18, color: '713F12', font: 'Helvetica' }),
+                    new TextRun({ text: userNotes, italics: true, size: 18, color: '713F12', font: 'Helvetica' }),
                   ],
                 }),
               ],
@@ -255,21 +747,12 @@ export async function exportPlanToWord(
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: 'CUADRO DE DISTRIBUCIÓN DE EQUIVALENTES (SMAE 5TA EDICIÓN)',
+                      text: 'CUADRO DE DISTRIBUCIÓN DE EQUIVALENTES',
                       bold: true,
                       size: 20,
                       color: 'FFFFFF',
                       font: 'Helvetica',
                     }),
-                    ...(patientInfo.name && patientInfo.name.trim().length > 0 ? [
-                      new TextRun({
-                        text: `   |   Paciente: ${patientInfo.name.trim()}`,
-                        bold: true,
-                        size: 18,
-                        color: 'FDE047',
-                        font: 'Helvetica',
-                      }),
-                    ] : []),
                   ],
                 }),
               ],
@@ -609,6 +1092,7 @@ export async function exportPlanToWord(
                 new TextRun({ text: '  •  ', bold: true, color: '059669', size: 19, font: 'Helvetica' }),
                 new TextRun({ text: `${ing.exactPortion} `, bold: true, size: 19, color: '1E293B', font: 'Helvetica' }),
                 new TextRun({ text: `${ing.foodName}`, size: 19, color: '1E293B', font: 'Helvetica' }),
+                new TextRun({ text: ` (${ing.equivalentsCount} eq ${ing.smaeGroup})`, size: 17, color: '64748B', font: 'Helvetica' }),
               ],
             })
           );

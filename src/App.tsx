@@ -3,14 +3,38 @@ import { Navbar } from './components/Navbar';
 import { NutritionSummaryBar } from './components/NutritionSummaryBar';
 import { SmaeTable } from './components/SmaeTable';
 import { PrintableEquivalentsTable } from './components/PrintableEquivalentsTable';
+import { AnthropometricMacroFrame } from './components/AnthropometricMacroFrame';
 import { GeneratedMealCard } from './components/GeneratedMealCard';
 import { SmaeGuideModal } from './components/SmaeGuideModal';
 import { INITIAL_TABLE_STATE, SMAE_GROUPS, MEAL_COLUMNS, TableGridState } from './data/smaeData';
-import { MealKey, GeneratedPlan, PatientInfo, MealPreference, MealOptionLetter, MenuOption } from './types';
-import { calculateMacros, formatClipboardMenu, calculateRowTotal, normalizeOptionSelection } from './utils/nutritionCalculations';
+import { MealKey, GeneratedPlan, PatientInfo, MealPreference, MealOptionLetter, MenuOption, MealMenu } from './types';
+import { calculateMacros, formatClipboardMenu, calculateRowTotal, normalizeOptionSelection, calculateBmiInfo } from './utils/nutritionCalculations';
+import { buildFallbackFullPlan, buildFallbackMeal } from './utils/smaeFallbackEngine';
+import { rectifyFullPlan, rectifyMealMenu, rectifyMenuOption, ensureMealVariety } from './utils/smaeRectifier';
 import { exportPlanToPdfNative } from './utils/pdfExport';
 import { exportPlanToWord } from './utils/wordExport';
 import confetti from 'canvas-confetti';
+
+// Robust JSON request helper that protects against HTML responses (like 502/504 or fallback pages)
+async function safePostJson<T>(url: string, payload: any): Promise<T> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const textSnippet = await response.text().catch(() => '');
+    throw new Error(`Respuesta no JSON del servidor (${response.status}): ${textSnippet.slice(0, 100)}`);
+  }
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error || `Error ${response.status}`);
+  }
+  return data as T;
+}
 import {
   Sparkles,
   Copy,
@@ -29,7 +53,9 @@ import {
   Loader2,
   Calendar,
   FileSpreadsheet,
-  Printer
+  Printer,
+  ChevronUp,
+  EyeOff,
 } from 'lucide-react';
 
 export default function App() {
@@ -51,6 +77,67 @@ export default function App() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingWord, setIsExportingWord] = useState(false);
   const [selectedMealOptions, setSelectedMealOptions] = useState<Record<string, MealOptionLetter[]>>({});
+
+  // Pestaña de acciones y exportación oculta por defecto para permitir una mayor exploración de los menús
+  // Se despliega al pasar el cursor (hover) y se oculta automáticamente al salir
+  const [isExportBarOpen, setIsExportBarOpen] = useState(false);
+  const exportBarTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleExportBarMouseEnter = () => {
+    if (exportBarTimeoutRef.current) {
+      clearTimeout(exportBarTimeoutRef.current);
+      exportBarTimeoutRef.current = null;
+    }
+    setIsExportBarOpen(true);
+  };
+
+  const handleExportBarMouseLeave = () => {
+    if (exportBarTimeoutRef.current) {
+      clearTimeout(exportBarTimeoutRef.current);
+    }
+    exportBarTimeoutRef.current = setTimeout(() => {
+      setIsExportBarOpen(false);
+    }, 350);
+  };
+
+  // History of previous options for each meal and letter to allow "Regresar a la opción anterior" per option
+  const [optionHistory, setOptionHistory] = useState<
+    Record<string, { A?: MenuOption[]; B?: MenuOption[]; C?: MenuOption[] }>
+  >({});
+
+  // Restore previous option/recipe for a specific meal and option letter (A, B, or C)
+  const handleRestoreOption = (mealName: string, letter: MealOptionLetter) => {
+    setOptionHistory((prev) => {
+      const mealHist = prev[mealName];
+      const letterHist = mealHist?.[letter];
+      if (!letterHist || letterHist.length === 0) return prev;
+
+      const previousOption = letterHist[letterHist.length - 1];
+      const newLetterHist = letterHist.slice(0, -1);
+
+      setGeneratedPlan((prevPlan) => {
+        if (!prevPlan) return prevPlan;
+        return {
+          ...prevPlan,
+          meals: prevPlan.meals.map((m) => {
+            if (m.mealName.toLowerCase() !== mealName.toLowerCase()) return m;
+            return {
+              ...m,
+              [letter === 'A' ? 'optionA' : letter === 'B' ? 'optionB' : 'optionC']: previousOption,
+            };
+          }),
+        };
+      });
+
+      return {
+        ...prev,
+        [mealName]: {
+          ...mealHist,
+          [letter]: newLetterHist,
+        },
+      };
+    });
+  };
 
   // Toggle option letter for a specific meal
   const handleToggleMealOption = (mealName: string, letter: MealOptionLetter) => {
@@ -95,7 +182,7 @@ export default function App() {
     }));
   };
 
-  // Reset table to all zeros
+  // Reset table to all zeros and clean patient fields
   const handleResetTable = () => {
     const emptyState: TableGridState = {};
     SMAE_GROUPS.forEach((group) => {
@@ -108,13 +195,57 @@ export default function App() {
       };
     });
     setTableState(emptyState);
+    setPatientInfo({
+      name: '',
+      date: new Date().toISOString().split('T')[0],
+      goal: '',
+      notes: '',
+      gender: '',
+      height: '',
+      weight: '',
+      age: '',
+      fatPercent: '',
+      fatKg: '',
+      musclePercent: '',
+      muscleKg: '',
+      bonePercent: '',
+      boneKg: '',
+      residualPercent: '',
+      residualKg: '',
+      skinfolds: undefined,
+      girths: undefined,
+      breadths: undefined,
+      preferredFoods: '',
+      dislikedFoods: '',
+      mealPreferences: undefined,
+    });
     setGeneratedPlan(null);
+    setOptionHistory({});
     setErrorMsg(null);
   };
 
   // Load preset
   const handleSelectPreset = (presetData: TableGridState) => {
     setTableState(presetData);
+  };
+
+  const buildDietNotes = (info: PatientInfo) => {
+    const bmi = calculateBmiInfo(info.height, info.weight);
+    const anthropometrics = [
+      info.gender ? `Sexo: ${info.gender}` : '',
+      info.age ? `Edad: ${info.age}` : '',
+      info.weight ? `Masa Corporal: ${info.weight}` : '',
+      info.height ? `Estatura: ${info.height}` : '',
+      bmi ? `IMC: ${bmi.formatted} (${bmi.category})` : '',
+    ].filter(Boolean).join(', ');
+
+    const parts = [
+      info.notes,
+      info.goal ? `Objetivo: ${info.goal}` : '',
+      anthropometrics ? `Datos antropométricos: ${anthropometrics}` : '',
+    ].filter(Boolean);
+
+    return parts.join(' - ');
   };
 
   // Main Generate Button Handler (supports keeping selected print options)
@@ -164,32 +295,67 @@ export default function App() {
     }
 
     try {
-      const response = await fetch('/api/generate-menus', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let resultData: any;
+      try {
+        resultData = await safePostJson<any>('/api/generate-menus', {
           tableData: tableDataPayload,
           patientName: patientInfo.name,
-          dietNotes: patientInfo.notes ? `${patientInfo.notes} - Objetivo: ${patientInfo.goal}` : '',
+          dietNotes: buildDietNotes(patientInfo),
           preferredFoods: prefList,
           dislikedFoods: dislikeList,
           mealPreferences: patientInfo.mealPreferences,
           preservedMeals: Object.keys(preservedMealsPayload).length > 0 ? preservedMealsPayload : undefined,
-        }),
-      });
+          previousOptionHistory: optionHistory,
+        });
+      } catch (apiErr) {
+        console.warn('API no disponible o respuesta no válida, ejecutando motor clínico SMAE 5ta Edición local:', apiErr);
+        const fallback = buildFallbackFullPlan(
+          tableDataPayload,
+          buildDietNotes(patientInfo),
+          prefList,
+          dislikeList
+        );
+        resultData = {
+          ...fallback,
+          isFallback: true,
+        };
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Error al comunicarse con el servidor de IA.');
+        if (Object.keys(preservedMealsPayload).length > 0 && resultData.meals) {
+          resultData.meals = resultData.meals.map((m: any) => {
+            const p = preservedMealsPayload[m.mealName];
+            if (!p || !Array.isArray(p.keptLetters)) return m;
+            return {
+              ...m,
+              optionA: p.keptLetters.includes('A') && p.optionA ? p.optionA : m.optionA,
+              optionB: p.keptLetters.includes('B') && p.optionB ? p.optionB : m.optionB,
+              optionC: p.keptLetters.includes('C') && p.optionC ? p.optionC : m.optionC,
+            };
+          });
+        }
       }
 
-      const resultData = await response.json();
+      // Rectify plan meticulously according to SMAE 5th Edition standards
+      resultData = rectifyFullPlan(resultData, tableDataPayload, dislikeList);
 
       setGeneratedPlan({
         patientNotes: resultData.patientNotes,
         isFallback: Boolean(resultData.isFallback),
         meals: resultData.meals || [],
         generatedAt: new Date().toISOString(),
+      });
+
+      // Track newly generated options in history to avoid repetition in future regenerations
+      setOptionHistory(prev => {
+        const next = { ...prev };
+        (resultData.meals || []).forEach((m: any) => {
+          if (!next[m.mealName]) {
+            next[m.mealName] = { A: [], B: [], C: [] };
+          }
+          if (m.optionA) next[m.mealName].A.push(m.optionA);
+          if (m.optionB) next[m.mealName].B.push(m.optionB);
+          if (m.optionC) next[m.mealName].C.push(m.optionC);
+        });
+        return next;
       });
 
       // Trigger celebration confetti
@@ -259,7 +425,8 @@ export default function App() {
       (m) => m.mealName.toLowerCase() === mealName.toLowerCase()
     );
     const letters = normalizeOptionSelection(selectedMealOptions[mealName]);
-    const shouldKeep = !forceAll && letters.length > 0 && letters.length < 3 && currentMeal;
+    // Mantener las opciones del menú seleccionadas para imprimir
+    const shouldKeep = !forceAll && letters.length > 0 && currentMeal;
 
     const keptOptions = shouldKeep && currentMeal
       ? {
@@ -272,31 +439,57 @@ export default function App() {
     const keepLetters = shouldKeep ? letters : undefined;
 
     try {
-      const response = await fetch('/api/regenerate-meal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let newMealData: any;
+      try {
+        newMealData = await safePostJson<any>('/api/regenerate-meal', {
           mealName: column.label,
           mealKey: column.key,
           portions: portionsForMeal,
           patientName: patientInfo.name,
-          dietNotes: patientInfo.notes,
+          dietNotes: buildDietNotes(patientInfo),
           preferredFoods: prefList,
           dislikedFoods: dislikeList,
           specificPreferences: patientInfo.mealPreferences?.[column.key],
           existingMenuTitles,
           keptOptions,
           keepLetters,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('No se pudo regenerar este tiempo de comida.');
+        });
+      } catch (apiErr) {
+        console.warn('Fallo al regenerar vía API, usando motor SMAE 5ta Edición local:', apiErr);
+        newMealData = buildFallbackMeal(
+          column.label,
+          portionsForMeal,
+          prefList,
+          dislikeList
+        );
+        if (keptOptions && Array.isArray(keepLetters)) {
+          if (keepLetters.includes('A') && keptOptions.optionA) newMealData.optionA = keptOptions.optionA;
+          if (keepLetters.includes('B') && keptOptions.optionB) newMealData.optionB = keptOptions.optionB;
+          if (keepLetters.includes('C') && keptOptions.optionC) newMealData.optionC = keptOptions.optionC;
+        }
       }
 
-      const newMealData = await response.json();
+      // Rectify regenerated meal according to SMAE 5th Edition standards
+      newMealData = rectifyMealMenu(newMealData, portionsForMeal, dislikeList);
 
       if (generatedPlan) {
+        if (currentMeal) {
+          setOptionHistory((prev) => {
+            const curA = (!keptOptions?.optionA && currentMeal.optionA) ? currentMeal.optionA : null;
+            const curB = (!keptOptions?.optionB && currentMeal.optionB) ? currentMeal.optionB : null;
+            const curC = (!keptOptions?.optionC && currentMeal.optionC) ? currentMeal.optionC : null;
+            const existingMealHistory = prev[currentMeal.mealName] || { A: [], B: [], C: [] };
+
+            return {
+              ...prev,
+              [currentMeal.mealName]: {
+                A: curA ? [...(existingMealHistory.A || []), curA] : (existingMealHistory.A || []),
+                B: curB ? [...(existingMealHistory.B || []), curB] : (existingMealHistory.B || []),
+                C: curC ? [...(existingMealHistory.C || []), curC] : (existingMealHistory.C || []),
+              },
+            };
+          });
+        }
         setGeneratedPlan({
           ...generatedPlan,
           meals: generatedPlan.meals.map((m) =>
@@ -350,37 +543,67 @@ export default function App() {
       : '';
 
     try {
-      const response = await fetch('/api/regenerate-option', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      let option: MenuOption;
+      try {
+        const responseData = await safePostJson<{ option: MenuOption }>('/api/regenerate-option', {
           mealName: column.label,
           optionLetter: letter,
           portions: portionsForMeal,
           patientName: patientInfo.name,
-          dietNotes: patientInfo.notes,
+          dietNotes: buildDietNotes(patientInfo),
           preferredFoods: prefList,
           dislikedFoods: dislikeList,
           specificPreferences: patientInfo.mealPreferences?.[column.key],
           existingMenuTitles,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`No se pudo regenerar la Opción ${letter}.`);
+        });
+        option = responseData.option;
+      } catch (apiErr) {
+        console.warn('Fallo al regenerar opción individual vía API, usando motor SMAE local:', apiErr);
+        const fallbackMeal = buildFallbackMeal(
+          column.label,
+          portionsForMeal,
+          prefList,
+          dislikeList
+        );
+        option = letter === 'B' ? fallbackMeal.optionB : letter === 'C' ? fallbackMeal.optionC : fallbackMeal.optionA;
       }
 
-      const { option } = await response.json();
+      // Rectify regenerated option according to SMAE 5th Edition
+      const optIdx = letter === 'B' ? 1 : letter === 'C' ? 2 : 0;
+      option = rectifyMenuOption(option, portionsForMeal, optIdx, mealName);
 
       if (generatedPlan) {
+        const currentMeal = generatedPlan.meals.find(
+          (m) => m.mealName.toLowerCase() === mealName.toLowerCase()
+        );
+        if (currentMeal) {
+          const currentOption =
+            letter === 'A' ? currentMeal.optionA : letter === 'B' ? currentMeal.optionB : currentMeal.optionC;
+          if (currentOption) {
+            setOptionHistory((prev) => {
+              const existingMealHistory = prev[currentMeal.mealName] || { A: [], B: [], C: [] };
+              return {
+                ...prev,
+                [currentMeal.mealName]: {
+                  A: existingMealHistory.A || [],
+                  B: existingMealHistory.B || [],
+                  C: existingMealHistory.C || [],
+                  [letter]: [...(existingMealHistory[letter] || []), currentOption],
+                },
+              };
+            });
+          }
+        }
+
         setGeneratedPlan({
           ...generatedPlan,
           meals: generatedPlan.meals.map((m) => {
             if (m.mealName.toLowerCase() !== mealName.toLowerCase()) return m;
-            return {
+            const updatedMeal: MealMenu = {
               ...m,
               [letter === 'A' ? 'optionA' : letter === 'B' ? 'optionB' : 'optionC']: option,
             };
+            return ensureMealVariety(updatedMeal, dislikeList);
           }),
         });
       }
@@ -395,7 +618,7 @@ export default function App() {
   // Copy Menus to Clipboard
   const handleCopyMenus = () => {
     if (!generatedPlan) return;
-    const formatted = formatClipboardMenu(generatedPlan, patientInfo.name, selectedMealOptions);
+    const formatted = formatClipboardMenu(generatedPlan, patientInfo, selectedMealOptions);
     navigator.clipboard.writeText(formatted);
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 3500);
@@ -437,6 +660,7 @@ export default function App() {
   const handleClearMenus = () => {
     setGeneratedPlan(null);
     setSelectedMealOptions({});
+    setOptionHistory({});
   };
 
   return (
@@ -575,312 +799,168 @@ export default function App() {
               </div>
             )}
 
-            {/* Plan Header Card */}
-            <div className="bg-white rounded-2xl border border-emerald-200 p-6 print:p-4 mb-6 print:mb-3 shadow-xs">
-              <div className="flex flex-wrap items-center justify-between gap-4 pb-4 print:pb-2.5 border-b border-slate-100 print:border-slate-200">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full text-2xs font-extrabold bg-emerald-100 text-emerald-800 uppercase tracking-wider">
-                      Plan Nutricional SMAE Generado
-                    </span>
-                    <span className="text-xs sm:text-sm print:text-xs text-slate-500 font-medium">
-                      {new Date(generatedPlan.generatedAt).toLocaleDateString('es-MX', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric',
-                      })}
-                    </span>
-                  </div>
-                  <h2 className="text-xl sm:text-2xl print:text-2xl font-black text-slate-900 font-heading mt-1">
-                    {patientInfo.name ? `Menú para: ${patientInfo.name}` : 'Menú Personalizado de 5 Comidas'}
-                  </h2>
-                  {patientInfo.goal && (
-                    <p className="text-xs sm:text-sm print:text-xs text-slate-700 mt-0.5 font-medium">
-                      🎯 <strong className="text-slate-900 font-bold">Objetivo:</strong> {patientInfo.goal}
-                    </p>
-                  )}
-                </div>
-
-                {/* Energy & Macros Pill in Results Header */}
-                <div className="flex items-center gap-3 bg-emerald-50 px-4 py-2 print:py-1.5 rounded-xl border border-emerald-200 print:border-slate-300">
-                  <div>
-                    <div className="text-2xs sm:text-xs print:text-2xs font-bold text-emerald-800 uppercase">Calorías Totales</div>
-                    <div className="text-lg sm:text-xl font-black text-emerald-950 font-heading">
-                      {macros.totalKcal} <span className="text-xs font-normal">kcal</span>
-                    </div>
-                  </div>
-                  <div className="h-8 w-px bg-emerald-200 print:bg-slate-300" />
-                  <div className="text-2xs sm:text-xs print:text-2xs text-emerald-900 space-y-0.5 font-semibold">
-                    <div><strong>P:</strong> {macros.totalProteinGrams}g ({macros.proteinKcalPercent}%)</div>
-                    <div><strong>L:</strong> {macros.totalLipidsGrams}g ({macros.lipidsKcalPercent}%)</div>
-                    <div><strong>HC:</strong> {macros.totalCarbsGrams}g ({macros.carbsKcalPercent}%)</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* General Nutritionist Notes if present */}
-              {generatedPlan.patientNotes && (
-                <div className="mt-4 print:mt-2.5 p-3.5 print:p-2.5 bg-slate-50 rounded-xl text-xs sm:text-sm print:text-xs text-slate-800 leading-relaxed border border-slate-200">
-                  <span className="font-black text-emerald-900">Recomendaciones Generales: </span>
-                  {generatedPlan.patientNotes}
-                </div>
-              )}
-            </div>
-
-            {/* Quick bulk options selector for PDF / Word / Print */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs no-print">
-              <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs" />
-                <span>Selección para Impresión, PDF y Word:</span>
-                <span className="text-2xs font-normal text-slate-500 hidden sm:inline">
-                  (Puedes elegir más de 1 opción por tiempo de comida)
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const all: Record<string, MealOptionLetter[]> = {};
-                    generatedPlan.meals.forEach((m) => {
-                      all[m.mealName] = m.optionC ? ['A', 'B', 'C'] : ['A', 'B'];
-                    });
-                    setSelectedMealOptions(all);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white transition-colors shadow-2xs cursor-pointer"
-                  title="Incluir las 3 opciones (A, B y C) en la impresión, PDF y Word"
-                >
-                  Las 3 Opciones (A, B y C)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allAB: Record<string, MealOptionLetter[]> = {};
-                    generatedPlan.meals.forEach((m) => {
-                      allAB[m.mealName] = ['A', 'B'];
-                    });
-                    setSelectedMealOptions(allAB);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-300 transition-colors shadow-2xs cursor-pointer"
-                  title="Incluir 2 Opciones (A y B) para impresión y exportación"
-                >
-                  Opciones A + B (2)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allAC: Record<string, MealOptionLetter[]> = {};
-                    generatedPlan.meals.forEach((m) => {
-                      allAC[m.mealName] = m.optionC ? ['A', 'C'] : ['A'];
-                    });
-                    setSelectedMealOptions(allAC);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 transition-colors shadow-2xs cursor-pointer"
-                  title="Incluir 2 Opciones (A y C) para impresión y exportación"
-                >
-                  Opciones A + C (2)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allBC: Record<string, MealOptionLetter[]> = {};
-                    generatedPlan.meals.forEach((m) => {
-                      allBC[m.mealName] = m.optionC ? ['B', 'C'] : ['B'];
-                    });
-                    setSelectedMealOptions(allBC);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-300 transition-colors shadow-2xs cursor-pointer"
-                  title="Incluir 2 Opciones (B y C) para impresión y exportación"
-                >
-                  Opciones B + C (2)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allA: Record<string, MealOptionLetter[]> = {};
-                    generatedPlan.meals.forEach((m) => { allA[m.mealName] = ['A']; });
-                    setSelectedMealOptions(allA);
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shadow-2xs cursor-pointer text-2xs"
-                  title="Dejar solo la Opción A"
-                >
-                  Solo A
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allB: Record<string, MealOptionLetter[]> = {};
-                    generatedPlan.meals.forEach((m) => { allB[m.mealName] = ['B']; });
-                    setSelectedMealOptions(allB);
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shadow-2xs cursor-pointer text-2xs"
-                  title="Dejar solo la Opción B"
-                >
-                  Solo B
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const allC: Record<string, MealOptionLetter[]> = {};
-                    generatedPlan.meals.forEach((m) => { allC[m.mealName] = ['C']; });
-                    setSelectedMealOptions(allC);
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors shadow-2xs cursor-pointer text-2xs"
-                  title="Dejar solo la Opción C"
-                >
-                  Solo C
-                </button>
-              </div>
-            </div>
-
-            {/* Banner: Mantener la opción seleccionada para impresión al volver a generar */}
-            <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50/80 rounded-2xl border border-emerald-200 shadow-2xs no-print">
-              <div className="flex items-center gap-2.5 text-xs text-emerald-950 font-medium max-w-xl">
-                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <Lock className="w-4 h-4 text-emerald-100" />
-                </div>
-                <div>
-                  <div className="font-bold text-emerald-900 text-xs sm:text-sm">
-                    Opciones seleccionadas para impresión protegidas
-                  </div>
-                  <div className="text-2xs sm:text-xs text-emerald-800">
-                    Al mezclar una comida o volver a generar el plan, las opciones que tengas marcadas con <span className="font-bold underline">"Para Imprimir"</span> se mantienen intactas.
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleGenerateMenus(true)}
-                  disabled={isGenerating}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-700 hover:bg-emerald-800 text-white shadow-2xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-                  title="Volver a generar nuevas recetas para cada comida, manteniendo intactas las opciones que seleccionaste para impresión"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isGenerating ? 'animate-spin' : ''}`} />
-                  <span>Volver a generar (Manteniendo para imprimir)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleGenerateMenus(false)}
-                  disabled={isGenerating}
-                  className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
-                  title="Generar todos los menús completamente nuevos desde cero (sin mantener opciones)"
-                >
-                  <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="hidden sm:inline">Regenerar todo desde cero</span>
-                  <span className="sm:hidden">Todo</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Cuadro de Distribución de Equivalentes SMAE (Impreso antes de las opciones de menú) */}
-            <PrintableEquivalentsTable
-              tableState={tableState}
-              patientName={patientInfo.name}
-              patientGoal={patientInfo.goal}
+            {/* Clinical Marco: Anthropometric parameters & Kcal, Protein, Lipids, Carbs table */}
+            <AnthropometricMacroFrame
+              patientInfo={patientInfo}
+              macros={macros}
+              className="mb-6 print:mb-4"
             />
+
+            {/* General Nutritionist Notes if present */}
+            {generatedPlan.patientNotes && (
+              <div className="mb-6 print:mb-4 p-4 print:p-3 bg-white rounded-2xl border border-slate-300 print:border-slate-400 text-xs sm:text-sm print:text-xs text-slate-800 leading-relaxed shadow-xs print-break-inside-avoid">
+                <span className="font-extrabold text-emerald-900 print:text-slate-900">Recomendaciones Generales: </span>
+                {generatedPlan.patientNotes}
+              </div>
+            )}
 
             {/* 5 Meal Cards */}
             <div className="space-y-6">
-              {generatedPlan.meals.map((meal, idx) => (
-                <GeneratedMealCard
-                  key={idx}
-                  meal={meal}
-                  mealIndex={idx}
-                  onRegenerateMeal={handleRegenerateMeal}
-                  onRegenerateOption={handleRegenerateOption}
-                  isRegenerating={regeneratingMeal === meal.mealName}
-                  regeneratingLetter={regeneratingOption?.mealName === meal.mealName ? regeneratingOption.letter : null}
-                  selectedOptions={selectedMealOptions[meal.mealName] || (meal.optionC ? ['A', 'B', 'C'] : ['A', 'B'])}
-                  onToggleOption={(letter) => handleToggleMealOption(meal.mealName, letter)}
-                  onSetMealOptions={(letters) => handleSetMealOptions(meal.mealName, letters)}
-                />
-              ))}
+              {generatedPlan.meals.map((meal, idx) => {
+                const mealHistoryForCard = optionHistory[meal.mealName] || {};
+                return (
+                  <GeneratedMealCard
+                    key={meal.mealName || idx}
+                    meal={meal}
+                    mealIndex={idx}
+                    onRegenerateMeal={handleRegenerateMeal}
+                    onRegenerateOption={handleRegenerateOption}
+                    isRegenerating={regeneratingMeal === meal.mealName}
+                    regeneratingLetter={regeneratingOption?.mealName === meal.mealName ? regeneratingOption.letter : null}
+                    selectedOptions={selectedMealOptions[meal.mealName] || (meal.optionC ? ['A', 'B', 'C'] : ['A', 'B'])}
+                    onToggleOption={(letter) => handleToggleMealOption(meal.mealName, letter)}
+                    onSetMealOptions={(letters) => handleSetMealOptions(meal.mealName, letters)}
+                    optionHistoryCounts={{
+                      A: mealHistoryForCard.A?.length || 0,
+                      B: mealHistoryForCard.B?.length || 0,
+                      C: mealHistoryForCard.C?.length || 0,
+                    }}
+                    onRestoreOption={handleRestoreOption}
+                  />
+                );
+              })}
             </div>
 
-            {/* Bottom Export Actions Bar */}
-            <div className="sticky bottom-4 z-20 bg-white/95 backdrop-blur-md rounded-2xl border border-slate-300/80 p-4 shadow-xl flex flex-wrap items-center justify-between gap-4 mt-8 no-print">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold font-heading text-sm">
-                  5/5
+            {/* Bottom Export Actions Bar (Oculta por defecto para mayor exploración, desplegable al poner el cursor sobre el botón) */}
+            {isExportBarOpen ? (
+              <div
+                onMouseEnter={handleExportBarMouseEnter}
+                onMouseLeave={handleExportBarMouseLeave}
+                className="sticky bottom-4 z-20 bg-white/95 backdrop-blur-md rounded-2xl border border-slate-300/80 p-4 shadow-xl flex flex-wrap items-center justify-between gap-4 mt-8 no-print transition-all"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold font-heading text-sm">
+                    5/5
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-800">Menús Listos para Entregar</div>
+                    <div className="text-2xs text-slate-500">3 Opciones calculadas con porciones exactas SMAE 5ta Ed.</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-800">Menús Listos para Entregar</div>
-                  <div className="text-2xs text-slate-500">3 Opciones calculadas con porciones exactas SMAE 5ta Ed.</div>
+
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  {/* Imprimir Hoja button */}
+                  <button
+                    id="btn-print-menus"
+                    type="button"
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs transition-all active:scale-95 cursor-pointer"
+                    title="Imprimir hoja directamente en tu impresora o abrir diálogo de impresión"
+                  >
+                    <Printer className="w-4 h-4 text-emerald-200" />
+                    <span>Imprimir Hoja</span>
+                  </button>
+
+                  {/* Copiar Menús button */}
+                  <button
+                    id="btn-copy-menus"
+                    type="button"
+                    onClick={handleCopyMenus}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-slate-800 hover:bg-slate-900 text-white shadow-xs transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Copy className="w-4 h-4 text-emerald-400" />
+                    <span>Copiar menús (WhatsApp / Texto)</span>
+                  </button>
+
+                  {/* Exportar a PDF button */}
+                  <button
+                    id="btn-export-pdf"
+                    type="button"
+                    onClick={handleExportPdf}
+                    disabled={isExportingPdf}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-red-600 hover:bg-red-700 text-white shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title="Descargar plan en formato PDF"
+                  >
+                    {isExportingPdf ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    ) : (
+                      <Download className="w-4 h-4 text-red-100" />
+                    )}
+                    <span>Exportar a PDF</span>
+                  </button>
+
+                  {/* Exportar a Word (.docx) button */}
+                  <button
+                    id="btn-export-word"
+                    type="button"
+                    onClick={handleExportWord}
+                    disabled={isExportingWord}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-blue-700 hover:bg-blue-800 text-white shadow-xs transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+                    title="Descargar plan en formato Word editable (.docx)"
+                  >
+                    {isExportingWord ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-blue-200" />
+                    )}
+                    <span>Exportar a Word</span>
+                  </button>
+
+                  {/* Reiniciar button */}
+                  <button
+                    id="btn-clear-menus"
+                    type="button"
+                    onClick={handleClearMenus}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs transition-all cursor-pointer"
+                  >
+                    <RotateCcw className="w-4 h-4 text-rose-500" />
+                    <span>Reiniciar</span>
+                  </button>
+
+                  {/* Ocultar Pestaña button */}
+                  <button
+                    id="btn-hide-export-tab"
+                    type="button"
+                    onClick={() => setIsExportBarOpen(false)}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-all cursor-pointer border border-transparent hover:border-slate-200"
+                    title="Ocultar pestaña de acciones para mayor espacio de visualización"
+                  >
+                    <EyeOff className="w-4 h-4 text-slate-400" />
+                    <span className="hidden sm:inline">Ocultar pestaña</span>
+                  </button>
                 </div>
               </div>
-
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                {/* Imprimir Hoja button */}
+            ) : (
+              <div
+                className="sticky bottom-4 z-20 flex justify-end no-print mt-6"
+                onMouseEnter={handleExportBarMouseEnter}
+                onMouseLeave={handleExportBarMouseLeave}
+              >
                 <button
-                  id="btn-print-menus"
+                  id="btn-show-export-tab"
                   type="button"
-                  onClick={() => window.print()}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs transition-all active:scale-95 cursor-pointer"
-                  title="Imprimir hoja directamente en tu impresora o abrir diálogo de impresión"
+                  onMouseEnter={handleExportBarMouseEnter}
+                  onMouseLeave={handleExportBarMouseLeave}
+                  onClick={() => setIsExportBarOpen((prev) => !prev)}
+                  className="pointer-events-auto inline-flex items-center gap-2 px-4 py-2.5 rounded-full font-heading font-black text-xs bg-slate-900 hover:bg-emerald-800 text-white shadow-xl hover:shadow-2xl border border-slate-700 hover:border-emerald-500 transition-all active:scale-95 cursor-pointer backdrop-blur-md group"
+                  title="Pasa el cursor o haz clic para desplegar las opciones de exportación"
                 >
-                  <Printer className="w-4 h-4 text-emerald-200" />
-                  <span>Imprimir Hoja</span>
-                </button>
-
-                {/* Copiar Menús button */}
-                <button
-                  id="btn-copy-menus"
-                  type="button"
-                  onClick={handleCopyMenus}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-slate-800 hover:bg-slate-900 text-white shadow-xs transition-all active:scale-95"
-                >
-                  <Copy className="w-4 h-4 text-emerald-400" />
-                  <span>Copiar menús (WhatsApp / Texto)</span>
-                </button>
-
-                {/* Exportar a PDF button */}
-                <button
-                  id="btn-export-pdf"
-                  type="button"
-                  onClick={handleExportPdf}
-                  disabled={isExportingPdf}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-red-600 hover:bg-red-700 text-white shadow-xs transition-all active:scale-95 disabled:opacity-50"
-                  title="Descargar plan en formato PDF"
-                >
-                  {isExportingPdf ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  ) : (
-                    <Download className="w-4 h-4 text-red-100" />
-                  )}
-                  <span>Exportar a PDF</span>
-                </button>
-
-                {/* Exportar a Word (.docx) button */}
-                <button
-                  id="btn-export-word"
-                  type="button"
-                  onClick={handleExportWord}
-                  disabled={isExportingWord}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-blue-700 hover:bg-blue-800 text-white shadow-xs transition-all active:scale-95 disabled:opacity-50"
-                  title="Descargar plan en formato Word editable (.docx)"
-                >
-                  {isExportingWord ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  ) : (
-                    <FileText className="w-4 h-4 text-blue-200" />
-                  )}
-                  <span>Exportar a Word</span>
-                </button>
-
-                {/* Reiniciar button */}
-                <button
-                  id="btn-clear-menus"
-                  type="button"
-                  onClick={handleClearMenus}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-heading font-bold text-xs bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs transition-all"
-                >
-                  <RotateCcw className="w-4 h-4 text-rose-500" />
-                  <span>Reiniciar opciones</span>
+                  <Printer className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                  <span>Opciones de Exportación (5/5)</span>
+                  <ChevronUp className="w-4 h-4 text-slate-300 group-hover:-translate-y-0.5 transition-transform" />
                 </button>
               </div>
-            </div>
+            )}
           </div>
         )}
       </main>

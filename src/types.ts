@@ -26,6 +26,8 @@ export interface SMAEIngredient {
   exactPortion: string;
   smaeGroup: string;
   equivalentsCount: number;
+  netGrams?: number;
+  preparationNotes?: string;
 }
 
 export interface MenuOption {
@@ -52,7 +54,7 @@ export interface GeneratedPlan {
   patientNotes?: string;
   isFallback?: boolean;
   meals: MealMenu[];
-  generatedAt: string;
+  generatedAt?: string;
 }
 
 export interface MealPreference {
@@ -68,11 +70,57 @@ export interface MealPreferences {
   cena: MealPreference;
 }
 
+export interface SkinfoldMeasurements {
+  triceps?: string;
+  subescapular?: string;
+  biceps?: string;
+  pectoral?: string;
+  axilar?: string;
+  crestaIliaca?: string;
+  supraespinal?: string;
+  abdominal?: string;
+  musloFrontal?: string;
+  pantorrillaMedial?: string;
+}
+
+export interface GirthMeasurements {
+  brazoRelajado?: string;
+  brazoContraido?: string;
+  cinturaMinima?: string;
+  caderasMaximo?: string;
+  pantorrillaMaximo?: string;
+}
+
+export interface BreadthMeasurements {
+  humeral?: string;
+  biestiloideo?: string;
+  femoral?: string;
+}
+
 export interface PatientInfo {
   name: string;
   date: string;
   goal: string;
   notes: string;
+  gender?: 'Hombre' | 'Mujer' | '' | string;
+  height?: string;
+  weight?: string;
+  age?: string;
+  // Composición corporal (4 componentes)
+  fatPercent?: string;
+  fatKg?: string;
+  musclePercent?: string;
+  muscleKg?: string;
+  bonePercent?: string;
+  boneKg?: string;
+  residualPercent?: string;
+  residualKg?: string;
+  // Pliegues cutáneos, circunferencias y diámetros
+  skinfolds?: SkinfoldMeasurements;
+  sumSkinfold3?: string;
+  sumSkinfold6?: string;
+  girths?: GirthMeasurements;
+  breadths?: BreadthMeasurements;
   preferredFoods?: string;
   dislikedFoods?: string;
   mealPreferences?: MealPreferences;

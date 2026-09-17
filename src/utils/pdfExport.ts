@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import { GeneratedPlan, PatientInfo, MacroNutrientSummary, MealOptionLetter } from '../types';
-import { normalizeOptionSelection, calculateRowTotal, calculateColumnTotal, calculateGrandTotalEquivalents } from './nutritionCalculations';
+import { normalizeOptionSelection, calculateRowTotal, calculateColumnTotal, calculateGrandTotalEquivalents, calculateBmiInfo, calculateSkinfoldSums } from './nutritionCalculations';
 import { TableGridState, SMAE_GROUPS, MEAL_COLUMNS } from '../data/smaeData';
 
 export function exportPlanToPdfNative(
@@ -57,61 +57,423 @@ export function exportPlanToPdfNative(
 
   y += 30;
 
-  // --- 2. Patient Info & Macro Card ---
-  doc.setFillColor(248, 250, 252); // slate-50
+  // --- 2. Marco Clínico Superior: Expediente del Paciente y Tabla de Kcal/Macronutrientes ---
+  const frameHeight = 33;
+  const leftBoxWidth = 88;
+  const boxGap = 4;
+  const rightBoxWidth = contentWidth - leftBoxWidth - boxGap;
+  const rightBoxX = margin + leftBoxWidth + boxGap;
+
+  // Cuadro 1 (Izquierdo): Expediente del Paciente y Prescripción
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(203, 213, 225); // slate-300
+  doc.setLineWidth(0.35);
+  doc.roundedRect(margin, y, leftBoxWidth, frameHeight, 2, 2, 'FD');
+
+  // Banner cabecera Expediente
+  doc.setFillColor(15, 23, 42); // slate-900
+  doc.roundedRect(margin, y, leftBoxWidth, 6.5, 2, 2, 'F');
+  doc.rect(margin, y + 3.5, leftBoxWidth, 3, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('EXPEDIENTE CLÍNICO DEL PACIENTE', margin + 3.5, y + 4.5);
+
+  const leftX = margin + 4;
+
+  // Datos del expediente
+  const patientDisplayName = patientInfo.name && patientInfo.name.trim() ? patientInfo.name.trim() : 'Plan Personalizado';
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  const splitPatientName = doc.splitTextToSize(`Paciente: ${patientDisplayName}`, leftBoxWidth - 8);
+  doc.text(splitPatientName[0], leftX, y + 12);
+
+  const dateStr = patientInfo.date
+    ? new Date(patientInfo.date + 'T12:00:00').toLocaleDateString('es-MX', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : new Date().toLocaleDateString('es-MX', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Fecha de valoración: ${dateStr}`, leftX, y + 17.5);
+
+  // Objetivo o Prescripción
+  const clinicalGoal = patientInfo.goal && patientInfo.goal.trim() ? patientInfo.goal.trim() : 'Mantenimiento y Prescripción Dietoterapéutica';
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(4, 120, 87); // emerald-700
+  const splitGoal = doc.splitTextToSize(`Objetivo: ${clinicalGoal}`, leftBoxWidth - 8);
+  doc.text(splitGoal[0], leftX, y + 23);
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(6.8);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Prescripción bajo Sistema Mexicano de Equivalentes (SMAE)', leftX, y + 28.5);
+
+  // Cuadro 2 (Derecho): Tabla de Kcal, Proteínas, Grasas y HC independiente
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(203, 213, 225); // slate-300
+  doc.setLineWidth(0.35);
+  doc.roundedRect(rightBoxX, y, rightBoxWidth, frameHeight, 2, 2, 'FD');
+
+  // Banner cabecera Cuadro de Macronutrientes
+  doc.setFillColor(15, 76, 92); // #0f4c5c
+  doc.roundedRect(rightBoxX, y, rightBoxWidth, 6.5, 2, 2, 'F');
+  doc.rect(rightBoxX, y + 3.5, rightBoxWidth, 3, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('TABLA DE KCAL Y MACRONUTRIENTES', rightBoxX + 3.5, y + 4.5);
+
+  // Table header dentro del cuadro derecho
+  const tableY = y + 8.5;
+  const innerTableWidth = rightBoxWidth - 6;
+  const innerTableX = rightBoxX + 3;
+
+  doc.setFillColor(241, 245, 249); // slate-100
+  doc.setDrawColor(203, 213, 225);
+  doc.rect(innerTableX, tableY, innerTableWidth, 4.8, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.8);
+  doc.setTextColor(51, 65, 85);
+  doc.text('Nutriente', innerTableX + 2, tableY + 3.5);
+  doc.text('Gramos', innerTableX + 33, tableY + 3.5);
+  doc.text('Kcal', innerTableX + 51, tableY + 3.5);
+  doc.text('% VET', innerTableX + 68, tableY + 3.5);
+
+  // Table Rows
+  const proteinKcal = Math.round(macros.totalProteinGrams * 4);
+  const lipidsKcal = Math.round(macros.totalLipidsGrams * 9);
+  const carbsKcal = Math.round(macros.totalCarbsGrams * 4);
+
+  const macroRows = [
+    { label: 'Kcal Totales', g: '—', kcal: `${Math.round(macros.totalKcal)}`, pct: '100%', bold: true },
+    { label: 'Proteínas', g: `${macros.totalProteinGrams} g`, kcal: `${proteinKcal}`, pct: `${macros.proteinKcalPercent}%`, bold: false },
+    { label: 'Grasas (Lípidos)', g: `${macros.totalLipidsGrams} g`, kcal: `${lipidsKcal}`, pct: `${macros.lipidsKcalPercent}%`, bold: false },
+    { label: 'HC (Carbohidratos)', g: `${macros.totalCarbsGrams} g`, kcal: `${carbsKcal}`, pct: `${macros.carbsKcalPercent}%`, bold: false },
+  ];
+
+  let rowY = tableY + 4.8;
+  macroRows.forEach((r, idx) => {
+    const isEven = idx % 2 === 0;
+    if (r.bold) {
+      doc.setFillColor(236, 253, 245); // emerald-50
+      doc.rect(innerTableX, rowY, innerTableWidth, 4.6, 'F');
+    } else if (isEven) {
+      doc.setFillColor(248, 250, 252);
+      doc.rect(innerTableX, rowY, innerTableWidth, 4.6, 'F');
+    }
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(innerTableX, rowY, innerTableWidth, 4.6, 'S');
+
+    doc.setFont('helvetica', r.bold ? 'bold' : 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(r.bold ? 15 : 51, r.bold ? 23 : 65, r.bold ? 42 : 85);
+
+    doc.text(r.label, innerTableX + 2, rowY + 3.3);
+    doc.text(r.g, innerTableX + 33, rowY + 3.3);
+    doc.text(r.kcal, innerTableX + 51, rowY + 3.3);
+    doc.text(r.pct, innerTableX + 68, rowY + 3.3);
+
+    rowY += 4.6;
+  });
+
+  y += frameHeight + 3.5;
+
+  // --- 2.2 TABLA UNIFICADA: VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL ---
+  // Una sola tabla integral combinando Parámetros Antropométricos, Sumatoria de Pliegues y los 4 componentes
+  const unifiedTableHeight = 54;
+  checkPageBreak(unifiedTableHeight + 4);
+
+  const bmiInfo = calculateBmiInfo(patientInfo.height, patientInfo.weight);
+  const skinfoldSums = calculateSkinfoldSums(patientInfo.skinfolds);
+  const displayHeight = patientInfo.height
+    ? /\d$/.test(patientInfo.height.trim())
+      ? parseFloat(patientInfo.height) > 3
+        ? `${patientInfo.height.trim()} cm`
+        : `${patientInfo.height.trim()} m`
+      : patientInfo.height
+    : '—';
+
+  // Contenedor principal de la tabla unificada
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(203, 213, 225); // slate-300
+  doc.setLineWidth(0.35);
+  doc.roundedRect(margin, y, contentWidth, unifiedTableHeight, 2, 2, 'FD');
+
+  // Encabezado Principal de la tabla unificada
+  doc.setFillColor(15, 23, 42); // slate-900
+  doc.roundedRect(margin, y, contentWidth, 5.5, 2, 2, 'F');
+  doc.rect(margin, y + 2.5, contentWidth, 3, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL (MODELO 4 COMPONENTES)', margin + 3.5, y + 4.1);
+
+  // --- Fila 1 de la tabla: Antropometría General (Sexo, Edad, Masa Corporal, Estatura, IMC) ---
+  const anthropoParams = [
+    { label: 'SEXO', value: patientInfo.gender || '—', sub: '' },
+    { label: 'EDAD', value: patientInfo.age ? `${patientInfo.age} años` : '—', sub: '' },
+    { label: 'MASA CORPORAL (PESO)', value: patientInfo.weight || '—', sub: '' },
+    { label: 'ESTATURA (TALLA)', value: displayHeight, sub: '' },
+    {
+      label: 'ÍNDICE MASA CORP. (IMC)',
+      value: bmiInfo ? bmiInfo.formatted : '—',
+      sub: bmiInfo ? `(${bmiInfo.category})` : '',
+    },
+  ];
+
+  const colW = contentWidth / anthropoParams.length;
+
+  anthropoParams.forEach((param, idx) => {
+    const colX = margin + idx * colW;
+    // Línea divisoria vertical
+    if (idx > 0) {
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(0.25);
+      doc.line(colX, y + 5.5, colX, y + 17.5);
+    }
+
+    // Etiqueta del parámetro antropométrico
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6);
+    doc.setTextColor(100, 116, 139); // slate-500
+    doc.text(param.label, colX + 3.5, y + 9.5);
+
+    // Valor del parámetro antropométrico
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(15, 23, 42); // slate-900
+    doc.text(param.value, colX + 3.5, y + 14.8);
+
+    if (param.sub) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.8);
+      doc.setTextColor(4, 120, 87); // emerald-700
+      const valW = doc.getTextWidth(param.value);
+      doc.text(param.sub, colX + 3.5 + valW + 2, y + 14.8);
+    }
+  });
+
+  // Divisor horizontal: De parámetros generales a Sumatorias de Pliegues
   doc.setDrawColor(203, 213, 225); // slate-300
   doc.setLineWidth(0.3);
-  doc.roundedRect(margin, y, contentWidth, 34, 2, 2, 'FD');
+  doc.line(margin, y + 17.5, margin + contentWidth, y + 17.5);
 
-  // Left column: Patient details
+  // --- Sub-franja: SUMATORIA DE PLIEGUES CUTÁNEOS ---
+  doc.setFillColor(240, 253, 244); // emerald-50
+  doc.rect(margin + 0.35, y + 17.65, contentWidth - 0.7, 4, 'F');
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(15, 23, 42); // slate-900
-  doc.text(`Paciente: ${patientInfo.name || 'Paciente'}`, margin + 4, y + 8);
+  doc.setFontSize(6.5);
+  doc.setTextColor(6, 95, 70); // emerald-800
+  doc.text('SUMATORIA DE PLIEGUES CUTÁNEOS', margin + 3.5, y + 20.6);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.setTextColor(71, 85, 105); // slate-600
-  doc.text(`Fecha: ${patientInfo.date || new Date().toISOString().split('T')[0]}`, margin + 4, y + 16);
-  if (patientInfo.goal) {
-    doc.text(`Objetivo: ${patientInfo.goal}`, margin + 4, y + 24);
+  // 2 Columnas para Σ3 y Σ6 Pliegues
+  const pliegueColW = contentWidth / 2;
+
+  // Divisor vertical entre Σ3 y Σ6
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.25);
+  doc.line(margin + pliegueColW, y + 21.65, margin + pliegueColW, y + 34.0);
+
+  // Columna 1: SUMATORIA DE Σ3 PLIEGUES (mm)
+  const col3X = margin;
+  doc.setFillColor(5, 150, 105); // emerald-600
+  doc.circle(col3X + 4, y + 25.0, 1, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.8);
+  doc.setTextColor(6, 95, 70); // emerald-800
+  doc.text('SUMATORIA DE Σ3 PLIEGUES (mm)', col3X + 6.5, y + 25.8);
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(5.8);
+  doc.setTextColor(100, 116, 139); // slate-500
+  doc.text('Subescapular + Supraespinal + Abdominal', col3X + 6.5, y + 29.5);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(4, 120, 87); // emerald-700
+  const sum3Text = skinfoldSums.sum3 || '— mm';
+  doc.text(sum3Text, col3X + 6.5, y + 33.2);
+
+  if (skinfoldSums.count3 > 0) {
+    const s3W = doc.getTextWidth(sum3Text);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      skinfoldSums.isComplete3 ? '(3/3 completados)' : `(${skinfoldSums.count3}/3 capturados)`,
+      col3X + 6.5 + s3W + 2,
+      y + 33.2
+    );
   }
 
-  // Right column: Energy & Macros
-  const macroX = margin + contentWidth - 75;
-  doc.setFillColor(236, 253, 245); // emerald-50
-  doc.setDrawColor(167, 243, 208); // emerald-200
-  doc.roundedRect(macroX, y + 2, 71, 30, 1.5, 1.5, 'FD');
+  // Columna 2: SUMATORIA DE Σ6 PLIEGUES (mm)
+  const col6X = margin + pliegueColW;
+  doc.setFillColor(15, 118, 110); // teal-600
+  doc.circle(col6X + 4, y + 25.0, 1, 'F');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(13, 49, 65); // pantone #0d3141
-  doc.text(`Energía: ${macros.totalKcal} kcal`, macroX + 4, y + 9);
+  doc.setFontSize(6.8);
+  doc.setTextColor(15, 118, 110); // teal-700
+  doc.text('SUMATORIA DE Σ6 PLIEGUES (mm)', col6X + 6.5, y + 25.8);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9.5);
-  doc.setTextColor(13, 49, 65); // pantone #0d3141
-  doc.text(`Proteínas: ${macros.totalProteinGrams}g (${macros.proteinKcalPercent}%)`, macroX + 4, y + 16);
-  doc.text(`Lípidos: ${macros.totalLipidsGrams}g (${macros.lipidsKcalPercent}%)`, macroX + 4, y + 22);
-  doc.text(`Carbohidratos: ${macros.totalCarbsGrams}g (${macros.carbsKcalPercent}%)`, macroX + 4, y + 28);
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(5.8);
+  doc.setTextColor(100, 116, 139);
+  doc.text('Tríceps + Subescapular + Supraespinal + Abdominal + Muslo Frontal + Pantorrilla Medial', col6X + 6.5, y + 29.5);
 
-  y += 38;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 118, 110); // teal-700
+  const sum6Text = skinfoldSums.sum6 || '— mm';
+  doc.text(sum6Text, col6X + 6.5, y + 33.2);
 
-  // General Notes if present
-  if (plan.patientNotes) {
-    checkPageBreak(25);
+  if (skinfoldSums.count6 > 0) {
+    const s6W = doc.getTextWidth(sum6Text);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      skinfoldSums.isComplete6 ? '(6/6 completados)' : `(${skinfoldSums.count6}/6 capturados)`,
+      col6X + 6.5 + s6W + 2,
+      y + 33.2
+    );
+  }
+
+  // Divisor horizontal: De Sumatorias de Pliegues a Composición Corporal
+  doc.setDrawColor(203, 213, 225); // slate-300
+  doc.setLineWidth(0.3);
+  doc.line(margin, y + 34.0, margin + contentWidth, y + 34.0);
+
+  // Sub-franja de Composición Corporal
+  doc.setFillColor(248, 250, 252); // slate-50
+  doc.rect(margin + 0.35, y + 34.15, contentWidth - 0.7, 4, 'F');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(71, 85, 105); // slate-600
+  doc.text('COMPOSICIÓN CORPORAL (FRACCIONAMIENTO 4 COMPONENTES)', margin + 3.5, y + 37.1);
+
+  // --- Fila 3 de la tabla: 4 Componentes de Composición Corporal ---
+  const compData = [
+    {
+      title: 'Masa Grasa',
+      pctLabel: '% de Grasa:',
+      pct: patientInfo.fatPercent ? `${patientInfo.fatPercent}%` : '—',
+      kgLabel: 'Kg de Grasa:',
+      kg: patientInfo.fatKg ? `${patientInfo.fatKg} kg` : '—',
+      color: [217, 119, 6], // amber-600
+    },
+    {
+      title: 'Masa Muscular',
+      pctLabel: '% de Músculo:',
+      pct: patientInfo.musclePercent ? `${patientInfo.musclePercent}%` : '—',
+      kgLabel: 'Kg de Músculo:',
+      kg: patientInfo.muscleKg ? `${patientInfo.muscleKg} kg` : '—',
+      color: [225, 29, 72], // rose-600
+    },
+    {
+      title: 'Masa Ósea (Hueso)',
+      pctLabel: '% de Hueso:',
+      pct: patientInfo.bonePercent ? `${patientInfo.bonePercent}%` : '—',
+      kgLabel: 'Kg de Hueso:',
+      kg: patientInfo.boneKg ? `${patientInfo.boneKg} kg` : '—',
+      color: [2, 132, 199], // sky-600
+    },
+    {
+      title: 'Masa Residual',
+      pctLabel: '% de Residual:',
+      pct: patientInfo.residualPercent ? `${patientInfo.residualPercent}%` : '—',
+      kgLabel: 'Kg Residual:',
+      kg: patientInfo.residualKg ? `${patientInfo.residualKg} kg` : '—',
+      color: [147, 51, 234], // purple-600
+    },
+  ];
+
+  const compColW = contentWidth / compData.length;
+
+  compData.forEach((c, idx) => {
+    const colX = margin + idx * compColW;
+    // Línea divisoria vertical
+    if (idx > 0) {
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.setLineWidth(0.25);
+      doc.line(colX, y + 34.0, colX, y + unifiedTableHeight - 0.5);
+    }
+
+    // Título del componente con círculo de color
+    doc.setFillColor(c.color[0], c.color[1], c.color[2]);
+    doc.circle(colX + 3.5, y + 41.2, 1, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(30, 41, 59); // slate-800
+    doc.text(c.title, colX + 6, y + 42.1);
+
+    // % renglón
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(71, 85, 105); // slate-600
+    const pctLabelW = doc.getTextWidth(c.pctLabel);
+    doc.text(c.pctLabel, colX + 3.5, y + 46.2);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.setTextColor(15, 23, 42);
+    doc.text(c.pct, colX + 3.5 + pctLabelW + 1.5, y + 46.2);
+
+    // Kg renglón
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(71, 85, 105);
+    const kgLabelW = doc.getTextWidth(c.kgLabel);
+    doc.text(c.kgLabel, colX + 3.5, y + 50.0);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.setTextColor(15, 23, 42);
+    doc.text(c.kg, colX + 3.5 + kgLabelW + 1.5, y + 50.0);
+  });
+
+  y += unifiedTableHeight + 3.5;
+
+  // --- 2.3 Notas e Indicaciones Generales del Paciente ---
+  // Se imprime en el PDF ÚNICAMENTE si el usuario ingresó información en este cuadro
+  const userNotes = patientInfo.notes?.trim();
+  if (userNotes) {
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(8.5);
+    const splitNotes = doc.splitTextToSize(`Indicaciones y notas del paciente: ${userNotes}`, contentWidth - 8);
+    const boxHeight = Math.max(12, splitNotes.length * 4 + 6);
+
+    checkPageBreak(boxHeight + 4);
     doc.setFillColor(254, 252, 232); // yellow-50
     doc.setDrawColor(254, 240, 138); // yellow-200
-    doc.roundedRect(margin, y, contentWidth, 16, 1.5, 1.5, 'FD');
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(9.5);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(margin, y, contentWidth, boxHeight, 1.5, 1.5, 'FD');
+
     doc.setTextColor(113, 63, 18); // yellow-900
-    const splitNotes = doc.splitTextToSize(`Recomendaciones: ${plan.patientNotes}`, contentWidth - 8);
-    doc.text(splitNotes, margin + 4, y + 6);
-    y += Math.max(16, splitNotes.length * 4.5 + 8);
+    doc.text(splitNotes, margin + 4, y + 5);
+    y += boxHeight + 4;
   }
 
-  // --- 2.5 Cuadro de Distribución de Equivalentes (SMAE 5ª Edición) ---
+  // --- 2.5 Cuadro de Distribución de Equivalentes ---
   if (tableState) {
     const allGroups = SMAE_GROUPS;
     checkPageBreak(35);
@@ -122,14 +484,7 @@ export function exportPlanToPdfNative(
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(255, 255, 255);
-    doc.text('CUADRO DE DISTRIBUCIÓN DE EQUIVALENTES (SMAE 5TA EDICIÓN)', margin + 4, y + 5.2);
-
-    if (patientInfo.name && patientInfo.name.trim().length > 0) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.setTextColor(253, 224, 71); // amber-300
-      doc.text(`Paciente: ${patientInfo.name.trim()}`, margin + contentWidth - 4, y + 5.2, { align: 'right' });
-    }
+    doc.text('CUADRO DE DISTRIBUCIÓN DE EQUIVALENTES', margin + 4, y + 5.2);
     y += 10;
 
     // Table Column Dimensions: total width = 182
@@ -337,8 +692,11 @@ export function exportPlanToPdfNative(
       if (option.ingredients && option.ingredients.length > 0) {
         option.ingredients.forEach((ing) => {
           checkPageBreak(6);
-          doc.text(`  •  ${ing.exactPortion} ${ing.foodName}`, margin + 3, y);
-          y += 5;
+          const eqLabel = ing.smaeGroup ? ` (${ing.equivalentsCount} eq ${ing.smaeGroup})` : '';
+          const ingText = `  •  ${ing.exactPortion} ${ing.foodName}${eqLabel}`;
+          const splitIng = doc.splitTextToSize(ingText, contentWidth - 6);
+          doc.text(splitIng, margin + 3, y);
+          y += splitIng.length * 4.8;
         });
       }
 

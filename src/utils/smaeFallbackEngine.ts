@@ -1,4 +1,6 @@
 import { MealMenu, MenuOption, SMAEIngredient } from '../types';
+import { rectifyMealMenu } from './smaeRectifier';
+import { synthesizeDishTitle, synthesizePreparation } from './smaeDishComposer';
 
 // Standard portions dictionary matching SMAE 5ta Edición with diverse options
 export const SMAE_PORTIONS_MAP: Record<
@@ -17,42 +19,42 @@ export const SMAE_PORTIONS_MAP: Record<
   'Verdura': {
     foodA: 'Espinacas cocidas y jitomate picado',
     foodB: 'Nopales cocidos y ensalada de pepino con lechuga',
-    foodC: 'Calabacitas tiernas salteadas con orégano y jitomate cherry',
-    foodAlt: 'Chayote al vapor con pimentón y flor de calabaza',
+    foodC: 'Calabacitas tiernas salteadas con flor de calabaza',
+    foodAlt: 'Chayote al vapor con pimentón y brócoli fresco',
     portionA: '1/2 tza espinacas (90g) y 1/2 pza jitomate (60g)',
     portionB: '1 tza nopales cocidos (130g) y 1 tza pepino con lechuga (100g)',
-    portionC: '1 tza calabacita en cubos (110g) y 4 pzas jitomate cherry (60g)',
-    portionAlt: '1/2 tza chayote cocido (80g) y 1 tza flor de calabaza (80g)',
+    portionC: '1/2 tza calabacita (55g) y 1 tza flor de calabaza (80g)',
+    portionAlt: '1/2 tza chayote cocido (80g) y 1/2 tza brócoli (75g)',
   },
   'Fruta': {
     foodA: 'Manzana roja fresca en gajos',
     foodB: 'Fresas frescas rebanadas con menta',
     foodC: 'Papaya picada con gotas de limón',
-    foodAlt: 'Plátano dominico en rodajas o melón fresco',
+    foodAlt: 'Durazno en almíbar o Puré de manzana',
     portionA: '1 pza (106g)',
     portionB: '1 taza rebanada (152g)',
     portionC: '1 taza picada (140g)',
-    portionAlt: '1/2 pza plátano (80g) o 1 taza melón (160g)',
+    portionAlt: '2 mitades (126g) o 1/2 taza puré (120g)',
   },
   'Cereales sin grasa': {
     foodA: 'Tortilla de maíz nixtamalizada comaleada',
     foodB: 'Arroz integral cocido al vapor',
-    foodC: 'Avena integral en hojuelas cocida con canela',
-    foodAlt: 'Pan de caja tostado integral o 2 tostadas horneadas',
+    foodC: 'Pasta integral cocida al dente',
+    foodAlt: 'Avena integral en hojuelas cocida',
     portionA: '1 pieza (30g)',
     portionB: '1/3 taza cocido (48g)',
-    portionC: '1/3 taza en hojuelas (20g)',
-    portionAlt: '1 rebanada (25g) o 2 tostadas horneadas (24g)',
+    portionC: '1/2 taza (65g)',
+    portionAlt: '1/3 taza (20g)',
   },
   'Cereales con grasa': {
-    foodA: 'Galleta de avena casera',
+    foodA: 'Granola natural tostada',
     foodB: 'Papas horneadas con paprika y finas hierbas',
     foodC: 'Barra de amaranto con cacao y miel',
-    foodAlt: 'Tostada frita casera escurrida',
-    portionA: '1 pieza pequeña (25g)',
+    foodAlt: 'Puré de papa preparado',
+    portionA: '3 cucharadas (20g)',
     portionB: '1/2 taza (70g)',
     portionC: '1 pieza pequeña (20g)',
-    portionAlt: '1 pieza (15g)',
+    portionAlt: '1/2 taza (105g)',
   },
   'Leguminosas': {
     foodA: 'Frijoles negros de la olla machacados con epazote',
@@ -87,19 +89,19 @@ export const SMAE_PORTIONS_MAP: Record<
   'Alimento de origen animal moderado aporte de grasa': {
     foodA: 'Huevo entero revuelto con jitomate',
     foodB: 'Queso Oaxaca deshebrado artesanal',
-    foodC: 'Huevo estrellado en sartén antiadherente',
+    foodC: 'Queso fresco de rancho o canasto en cubos',
     foodAlt: 'Sardina en salsa de jitomate',
     portionA: '1 pieza (50g)',
     portionB: '30g',
-    portionC: '1 pieza (50g)',
+    portionC: '35g',
     portionAlt: '30g',
   },
   'Alimento de origen animal alto aporte de grasa': {
     foodA: 'Queso manchego artesanal en rebanada',
-    foodB: 'Huevo cocido con queso derretido',
+    foodB: 'Salchicha de pavo asada en rodajas',
     foodC: 'Queso gouda en finas láminas',
     portionA: '25g',
-    portionB: '1 pieza (50g) y 10g queso',
+    portionB: '1 pieza (45g)',
     portionC: '25g',
   },
   'Leche Descremada': {
@@ -113,18 +115,18 @@ export const SMAE_PORTIONS_MAP: Record<
   'Leche Semi Descremada': {
     foodA: 'Leche semidescremada espumada con café',
     foodB: 'Yogur semidescremado natural',
-    foodC: 'Leche semidescremada natural',
+    foodC: 'Kéfir semidescremado natural',
     portionA: '1 taza (240ml)',
     portionB: '3/4 taza (150g)',
-    portionC: '1 taza (240ml)',
+    portionC: '3/4 taza (180ml)',
   },
   'Leche Entera': {
     foodA: 'Leche entera pasteurizada',
     foodB: 'Yogur griego entero sin azúcar',
-    foodC: 'Leche entera para café con canela',
+    foodC: 'Kéfir entero natural con canela',
     portionA: '1 taza (240ml)',
     portionB: '1/2 taza (125g)',
-    portionC: '1 taza (240ml)',
+    portionC: '1/2 taza (125ml)',
   },
   'Leche con Azúcar': {
     foodA: 'Yogur bebible de fresa natural',
@@ -137,10 +139,10 @@ export const SMAE_PORTIONS_MAP: Record<
   'Aceite sin Proteína': {
     foodA: 'Aguacate Hass en rebanadas cremosas',
     foodB: 'Aceite de oliva extra virgen para saltear',
-    foodC: 'Aceite de canola o aguacate en spray/gotas',
+    foodC: 'Aceitunas verdes o negras deshuesadas',
     portionA: '1/3 pieza (45g)',
     portionB: '1 cdita (5ml)',
-    portionC: '1 cdita (5ml)',
+    portionC: '6 piezas medianas (30g)',
   },
   'Aceites con Proteína': {
     foodA: 'Almendras enteras naturales tostadas',
@@ -161,12 +163,12 @@ export const SMAE_PORTIONS_MAP: Record<
     portionC: '2 cditas (10g)',
   },
   'Azúcar con Grasa': {
-    foodA: 'Chocolate amargo 70% cacao artesanal',
-    foodB: 'Cajeta de leche de cabra',
-    foodC: 'Crema de avellana con cacao sin azúcar añadida',
-    portionA: '1 cuadrito (15g)',
-    portionB: '1 cdita (10g)',
-    portionC: '1 cdita (12g)',
+    foodA: 'Mazapán de cacahuate',
+    foodB: 'Chocolate amargo 70% cacao artesanal',
+    foodC: 'Cajeta de leche de cabra',
+    portionA: '1/3 pieza (10g)',
+    portionB: '1 cuadrito (15g)',
+    portionC: '1 cdita (10g)',
   },
 };
 
@@ -232,82 +234,73 @@ export function buildFallbackMeal(
         pC = ref.portionAlt || ref.portionC;
       }
 
-      ingredientsA.push({
-        foodName: fA,
-        exactPortion: `${multiplierText}${pA}`,
-        smaeGroup: group,
-        equivalentsCount: qty,
-      });
+      if (group === 'Aceite sin Proteína' && qty >= 2) {
+        const restQty = qty - 1;
+        const multiplierRest = restQty === 1 ? '' : `${restQty}x `;
+        
+        // 1 eq for preparation
+        ingredientsA.push({ foodName: 'Aceite de oliva (preparación)', exactPortion: '1 cdita (5ml)', smaeGroup: group, equivalentsCount: 1 });
+        ingredientsB.push({ foodName: 'Aceite vegetal (preparación)', exactPortion: '1 cdita (5ml)', smaeGroup: group, equivalentsCount: 1 });
+        ingredientsC.push({ foodName: 'Aceite de aguacate (preparación)', exactPortion: '1 cdita (5ml)', smaeGroup: group, equivalentsCount: 1 });
+        
+        // Rest of eq as ingredient
+        ingredientsA.push({ foodName: 'Aguacate Hass', exactPortion: `${multiplierRest}1/3 pieza (45g)`, smaeGroup: group, equivalentsCount: restQty });
+        ingredientsB.push({ foodName: 'Crema de vaca (ingrediente)', exactPortion: `${multiplierRest}1 cda (15g)`, smaeGroup: group, equivalentsCount: restQty });
+        ingredientsC.push({ foodName: 'Mayonesa (ingrediente)', exactPortion: `${multiplierRest}1 cdita (5g)`, smaeGroup: group, equivalentsCount: restQty });
+      } else {
+        ingredientsA.push({
+          foodName: fA,
+          exactPortion: `${multiplierText}${pA}`,
+          smaeGroup: group,
+          equivalentsCount: qty,
+        });
 
-      ingredientsB.push({
-        foodName: fB,
-        exactPortion: `${multiplierText}${pB}`,
-        smaeGroup: group,
-        equivalentsCount: qty,
-      });
+        ingredientsB.push({
+          foodName: fB,
+          exactPortion: `${multiplierText}${pB}`,
+          smaeGroup: group,
+          equivalentsCount: qty,
+        });
 
-      ingredientsC.push({
-        foodName: fC,
-        exactPortion: `${multiplierText}${pC}`,
-        smaeGroup: group,
-        equivalentsCount: qty,
-      });
+        ingredientsC.push({
+          foodName: fC,
+          exactPortion: `${multiplierText}${pC}`,
+          smaeGroup: group,
+          equivalentsCount: qty,
+        });
+      }
     }
   });
 
-  // Unique, non-repeating recipe titles per meal time
-  const getDishTitleA = (name: string): string => {
-    const n = name.toLowerCase();
-    if (n.includes('desayuno')) return 'Huevos Revueltos a la Mexicana con Frijolitos y Tortilla Comaleada';
-    if (n.includes('comida')) return 'Guisado de Pechuga Deshebrada en Salsa Verde con Arroz y Frijoles';
-    if (n.includes('cena')) return 'Quesadillas Ligeras de Queso Panela con Guacamole y Ensalada';
-    if (n.includes('1') || n.includes('colación 1')) return 'Bowl Energético de Manzana y Fruta Fresca con Almendras';
-    return 'Snack Balanceado de Fruta con Semillas Tostadas';
-  };
-
-  const getDishTitleB = (name: string): string => {
-    const n = name.toLowerCase();
-    if (n.includes('desayuno')) return 'Omelette Ligero de Espinacas con Queso Panela y Pan Integral';
-    if (n.includes('comida')) return 'Bistec de Res Magro Asado al Limón con Nopales y Arroz Integral';
-    if (n.includes('cena')) return 'Tostadas Horneadas con Pescado o Atún al Cilantro y Aguacate';
-    if (n.includes('1') || n.includes('colación 1')) return 'Porción de Fresas Frescas con Mix de Nueces Tostadas';
-    return 'Colación Saludable de Papaya con Yogur y Semillas';
-  };
-
-  const getDishTitleC = (name: string): string => {
-    const n = name.toLowerCase();
-    if (n.includes('desayuno')) return 'Bowl Cálido de Avena con Canela, Manzana en Cubos y Claras';
-    if (n.includes('comida')) return 'Filete de Pescado Empapelado con Calabacitas y Garbanzos Salteados';
-    if (n.includes('cena')) return 'Sincronizada Ligera de Jamón de Pavo con Ensalada Fresca de Pepino';
-    if (n.includes('1') || n.includes('colación 1')) return 'Mix Crocante de Frutas Tropicales con Cacahuates Tostados';
-    return 'Snack Rápido de Yogur Descremado con Fruta y Chía';
-  };
+  const titleA = synthesizeDishTitle(mealName, ingredientsA, 0);
+  const titleB = synthesizeDishTitle(mealName, ingredientsB, 1);
+  const titleC = synthesizeDishTitle(mealName, ingredientsC, 2);
 
   const optionA: MenuOption = {
-    title: getDishTitleA(mealName),
+    title: titleA,
     description: `Opción tradicional mexicana balanceada que cubre con precisión matemática los ${summary.map((s) => `${s.quantity} eq ${s.group}`).join(', ')}.`,
     ingredients: ingredientsA,
-    preparation: 'Cocinar los alimentos a la plancha o comal con la porción de grasa o aceite vegetal asignada. Servir caliente con agua natural o infusión sin azúcar.',
+    preparation: synthesizePreparation(titleA, ingredientsA),
     nutritionistTip: 'Sazona con hierbas naturales (orégano, cilantro, epazote, ajo y cebolla) para realzar el sabor sin añadir sodio innecesario.',
   };
 
   const optionB: MenuOption = {
-    title: getDishTitleB(mealName),
+    title: titleB,
     description: `Opción fresca, práctica y alternativa que respeta al 100% la cuadratura del SMAE 5ta edición.`,
     ingredients: ingredientsB,
-    preparation: 'Pesar o medir los ingredientes con tazas medidoras estándar en crudo o cocido según la especificación del SMAE. Emplatar de forma vistosa.',
+    preparation: synthesizePreparation(titleB, ingredientsB),
     nutritionistTip: 'La combinación de fibra y proteína magra brinda saciedad prolongada y mantiene estables los niveles de glucosa.',
   };
 
   const optionC: MenuOption = {
-    title: getDishTitleC(mealName),
+    title: titleC,
     description: `Tercera opción creativa e innovadora con técnica culinaria diferenciada para ofrecer máxima variedad alimentaria.`,
     ingredients: ingredientsC,
-    preparation: 'Preparar en sartén antiadherente o al vapor para conservar al máximo micronutrientes y frescura.',
+    preparation: synthesizePreparation(titleC, ingredientsC),
     nutritionistTip: 'Recuerda que puedes intercambiar libremente cualquiera de los ingredientes por otro del mismo grupo equivalente según tu lista del SMAE.',
   };
 
-  return {
+  const rawMeal: MealMenu = {
     mealName,
     isFallback: true,
     totalEquivalentsSummary: summary,
@@ -315,6 +308,8 @@ export function buildFallbackMeal(
     optionB,
     optionC,
   };
+
+  return rectifyMealMenu(rawMeal, portions);
 }
 
 export function buildFallbackFullPlan(

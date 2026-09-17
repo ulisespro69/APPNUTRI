@@ -208,32 +208,52 @@ export type TableGridState = {
   };
 };
 
-export const INITIAL_TABLE_STATE: TableGridState = {
-  verdura: { desayuno: 1, colacion1: 0, comida: 2, colacion2: 1, cena: 1 },
-  fruta: { desayuno: 1, colacion1: 1, comida: 0, colacion2: 1, cena: 0 },
-  cereales_sin_grasa: { desayuno: 2, colacion1: 0, comida: 2, colacion2: 0, cena: 1.5 },
+export const EMPTY_TABLE_STATE: TableGridState = {
+  verdura: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+  fruta: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+  cereales_sin_grasa: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
   cereales_con_grasa: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
-  leguminosas: { desayuno: 0.5, colacion1: 0, comida: 1, colacion2: 0, cena: 0 },
-  aoa_muy_bajo: { desayuno: 0, colacion1: 0, comida: 2, colacion2: 0, cena: 1 },
-  aoa_bajo: { desayuno: 1, colacion1: 0, comida: 1, colacion2: 0, cena: 1 },
-  aoa_moderado: { desayuno: 1, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+  leguminosas: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+  aoa_muy_bajo: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+  aoa_bajo: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+  aoa_moderado: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
   aoa_alto: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
-  leche_descremada: { desayuno: 1, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+  leche_descremada: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
   leche_semi_descremada: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
   leche_entera: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
   leche_con_azucar: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
-  aceite_sin_proteina: { desayuno: 1, colacion1: 0, comida: 1.5, colacion2: 0, cena: 1 },
-  aceite_con_proteina: { desayuno: 0, colacion1: 1, comida: 0, colacion2: 1, cena: 0 },
+  aceite_sin_proteina: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+  aceite_con_proteina: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
   azucar_sin_grasa: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
   azucar_con_grasa: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
 };
+
+export const INITIAL_TABLE_STATE: TableGridState = EMPTY_TABLE_STATE;
 
 export const PRESETS: { name: string; description: string; kcalEst: number; data: TableGridState }[] = [
   {
     name: 'Plan 1,600 kcal Estándar Balanceado',
     description: 'Distribución completa en 5 tiempos equilibrando macros y fibra.',
     kcalEst: 1600,
-    data: INITIAL_TABLE_STATE,
+    data: {
+      verdura: { desayuno: 1, colacion1: 0, comida: 2, colacion2: 1, cena: 1 },
+      fruta: { desayuno: 1, colacion1: 1, comida: 0, colacion2: 1, cena: 0 },
+      cereales_sin_grasa: { desayuno: 2, colacion1: 0, comida: 2, colacion2: 0, cena: 1.5 },
+      cereales_con_grasa: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+      leguminosas: { desayuno: 0.5, colacion1: 0, comida: 1, colacion2: 0, cena: 0 },
+      aoa_muy_bajo: { desayuno: 0, colacion1: 0, comida: 2, colacion2: 0, cena: 1 },
+      aoa_bajo: { desayuno: 1, colacion1: 0, comida: 1, colacion2: 0, cena: 1 },
+      aoa_moderado: { desayuno: 1, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+      aoa_alto: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+      leche_descremada: { desayuno: 1, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+      leche_semi_descremada: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+      leche_entera: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+      leche_con_azucar: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+      aceite_sin_proteina: { desayuno: 1, colacion1: 0, comida: 1.5, colacion2: 0, cena: 1 },
+      aceite_con_proteina: { desayuno: 0, colacion1: 1, comida: 0, colacion2: 1, cena: 0 },
+      azucar_sin_grasa: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+      azucar_con_grasa: { desayuno: 0, colacion1: 0, comida: 0, colacion2: 0, cena: 0 },
+    },
   },
   {
     name: 'Plan 1,400 kcal Reducción Ponderal',

@@ -1,18 +1,20 @@
 import React from 'react';
 import { MealMenu, MenuOption, MealOptionLetter } from '../types';
-import { Utensils, RefreshCw, ChefHat, Info, Check, Plus, Lock, RotateCcw } from 'lucide-react';
+import { Utensils, RefreshCw, ChefHat, Info, Check, Plus, Lock, Undo2, CheckCircle2 } from 'lucide-react';
 import { normalizeOptionSelection } from '../utils/nutritionCalculations';
 
 interface GeneratedMealCardProps {
   meal: MealMenu;
   mealIndex: number;
-  onRegenerateMeal: (mealName: string, forceAll?: boolean) => void;
+  onRegenerateMeal?: (mealName: string, forceAll?: boolean) => void;
   onRegenerateOption?: (mealName: string, letter: MealOptionLetter) => void;
   isRegenerating: boolean;
   regeneratingLetter?: MealOptionLetter | null;
   selectedOptions?: MealOptionLetter[] | string;
   onToggleOption: (letter: MealOptionLetter) => void;
-  onSetMealOptions: (letters: MealOptionLetter[]) => void;
+  onSetMealOptions?: (letters: MealOptionLetter[]) => void;
+  optionHistoryCounts?: { A: number; B: number; C: number };
+  onRestoreOption?: (mealName: string, letter: MealOptionLetter) => void;
 }
 
 export const GeneratedMealCard: React.FC<GeneratedMealCardProps> = ({
@@ -25,6 +27,8 @@ export const GeneratedMealCard: React.FC<GeneratedMealCardProps> = ({
   selectedOptions,
   onToggleOption,
   onSetMealOptions,
+  optionHistoryCounts,
+  onRestoreOption,
 }) => {
   const activeLetters = normalizeOptionSelection(selectedOptions);
 
@@ -64,6 +68,7 @@ export const GeneratedMealCard: React.FC<GeneratedMealCardProps> = ({
     const isOptionA = letter === 'A';
     const isOptionB = letter === 'B';
     const isOptionC = letter === 'C';
+    const historyCount = optionHistoryCounts?.[letter] || 0;
 
     let accentBorder = 'border-slate-200';
     let badgeBg = 'bg-emerald-700 text-white';
@@ -93,68 +98,101 @@ export const GeneratedMealCard: React.FC<GeneratedMealCardProps> = ({
       >
         {/* Option Header */}
         <div>
-          <div className="flex items-center justify-between gap-2 mb-2.5 print:mb-1.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={`px-2.5 py-0.5 rounded-md text-xs sm:text-sm print:text-xs font-black tracking-wide uppercase font-heading ${badgeBg}`}>
-                Opción {letter}
-              </span>
-              <h4 className="text-base sm:text-lg print:text-base font-extrabold text-slate-900 font-heading leading-snug">
-                {option.title}
-              </h4>
-            </div>
+          {/* Top row: Option letter badge + compact action buttons aligned with table style */}
+          <div className="flex items-center justify-between gap-2 mb-2 print:mb-1 flex-wrap">
+            <span className={`px-2.5 py-0.5 rounded-md text-xs font-black tracking-wide uppercase font-heading ${badgeBg}`}>
+              Opción {letter}
+            </span>
 
-            {/* Checkbox / Toggle for this option + Single Option Regenerate button */}
+            {/* Action buttons for this specific option (matching table control proportions) */}
             <div className="flex items-center gap-1.5 shrink-0 no-print">
-              {onRegenerateOption && (
+              {/* Regresar a la opción anterior para esta opción */}
+              {onRestoreOption && (
                 <button
                   type="button"
-                  onClick={() => onRegenerateOption(meal.mealName, letter)}
-                  disabled={isRegenerating || regeneratingLetter === letter}
-                  className="p-1.5 px-2 rounded-lg text-2xs font-semibold flex items-center gap-1 transition-all cursor-pointer bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs disabled:opacity-40"
-                  title={`Volver a generar una receta diferente solo para la Opción ${letter} sin alterar las otras opciones`}
+                  id={`btn-undo-${mealIndex}-${letter}`}
+                  onClick={() => onRestoreOption(meal.mealName, letter)}
+                  disabled={isRegenerating || historyCount === 0}
+                  className={`h-7 px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
+                    historyCount > 0
+                      ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-2xs active:scale-95'
+                      : 'bg-slate-100 text-slate-400 border border-slate-200/80 cursor-not-allowed opacity-40'
+                  }`}
+                  title={
+                    historyCount > 0
+                      ? `Regresar a la receta anterior de la Opción ${letter} (${historyCount} previa${historyCount > 1 ? 's' : ''})`
+                      : `Aún no hay opción anterior para la Opción ${letter}`
+                  }
                 >
-                  <RefreshCw className={`w-3 h-3 text-emerald-700 ${regeneratingLetter === letter ? 'animate-spin' : ''}`} />
-                  <span className="hidden xl:inline">Cambiar {letter}</span>
+                  <Undo2 className="w-3.5 h-3.5 text-current shrink-0" />
+                  <span>Regresar</span>
+                  {historyCount > 0 && (
+                    <span className="px-1 py-0.2 text-[10px] font-black bg-white/30 text-white rounded-full leading-none">
+                      {historyCount}
+                    </span>
+                  )}
                 </button>
               )}
 
+              {/* Cambiar receta de esta opción */}
+              {onRegenerateOption && (
+                <button
+                  type="button"
+                  id={`btn-change-${mealIndex}-${letter}`}
+                  onClick={() => onRegenerateOption(meal.mealName, letter)}
+                  disabled={isRegenerating || regeneratingLetter === letter}
+                  className="h-7 px-2.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-all cursor-pointer bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 shadow-2xs hover:border-slate-300 disabled:opacity-40"
+                  title={`Generar una nueva receta para la Opción ${letter}`}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-emerald-700 shrink-0 ${regeneratingLetter === letter ? 'animate-spin' : ''}`} />
+                  <span>Cambiar</span>
+                </button>
+              )}
+
+              {/* Mantener/Seleccionar en el menú para imprimir */}
               <button
                 type="button"
+                id={`btn-toggle-print-${mealIndex}-${letter}`}
                 onClick={() => onToggleOption(letter)}
-                className={`p-1.5 px-3 rounded-lg text-2xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                className={`h-7 px-2.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                   isSelected
                     ? isOptionA
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs'
                       : isOptionB
-                      ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-xs'
-                      : 'bg-sky-600 hover:bg-sky-700 text-white shadow-xs'
-                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-300'
+                      ? 'bg-teal-600 hover:bg-teal-700 text-white shadow-2xs'
+                      : 'bg-sky-600 hover:bg-sky-700 text-white shadow-2xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-300/80'
                 }`}
                 title={
                   isSelected
-                    ? `Opción ${letter} activa para impresión y exportación (haz clic para excluir)`
-                    : `Haz clic para incluir Opción ${letter} en impresión y exportación`
+                    ? `Opción ${letter} seleccionada para el menú impreso (haz clic para excluir)`
+                    : `Haz clic para seleccionar y mantener la Opción ${letter} para el menú impreso`
                 }
               >
                 {isSelected ? (
                   <>
-                    <Check className="w-3.5 h-3.5 text-white" />
+                    <Check className="w-3.5 h-3.5 text-white shrink-0" />
                     <span>Para Imprimir</span>
                   </>
                 ) : (
                   <>
-                    <Plus className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Incluir Opción {letter}</span>
+                    <Plus className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span>Incluir {letter}</span>
                   </>
                 )}
               </button>
             </div>
           </div>
 
+          {/* Option title with full width prominence */}
+          <h4 className="text-base sm:text-lg print:text-base font-extrabold text-slate-900 font-heading leading-snug mb-2">
+            {option.title}
+          </h4>
+
           {isSelected && (
-            <div className="mb-2 px-2 py-0.5 bg-emerald-50/90 text-emerald-900 text-3xs font-bold rounded-md inline-flex items-center gap-1 border border-emerald-200/80 no-print">
+            <div className="mb-2 px-2.5 py-0.5 bg-emerald-50/90 text-emerald-900 text-3xs font-bold rounded-md inline-flex items-center gap-1 border border-emerald-200/80 no-print">
               <Lock className="w-2.5 h-2.5 text-emerald-700" />
-              <span>Opción para imprimir (se mantiene al volver a generar)</span>
+              <span>Opción de menú seleccionada para imprimir (mantenida)</span>
             </div>
           )}
 
@@ -188,6 +226,7 @@ export const GeneratedMealCard: React.FC<GeneratedMealCardProps> = ({
                     <span className="leading-snug">
                       <strong className="text-slate-950 font-black text-sm sm:text-base print:text-sm">{ing.exactPortion}</strong>{' '}
                       <span className="text-slate-900 font-semibold text-sm sm:text-base print:text-sm">{ing.foodName}</span>
+                      <span className="hidden print:inline text-[9px] font-semibold text-slate-500 ml-1">({ing.equivalentsCount} eq {ing.smaeGroup})</span>
                     </span>
                   </div>
                   <span className="text-2xs sm:text-xs font-bold px-2 py-0.5 rounded-sm bg-emerald-100/80 text-emerald-900 border border-emerald-200 shrink-0 print:hidden">
@@ -256,6 +295,13 @@ export const GeneratedMealCard: React.FC<GeneratedMealCardProps> = ({
                   ? `1 Opción para imprimir (${activeLetters.join(', ')})`
                   : `${selectedCount} Opciones seleccionadas (${activeLetters.join(' + ')})`}
               </span>
+              <span
+                className="text-3xs sm:text-2xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-300 print:hidden flex items-center gap-1 shadow-2xs"
+                title="Gramos, grupos y equivalencias rectificados minuciosamente según el libro oficial SMAE 5ta Edición"
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                SMAE 5ª Ed. Rectificado
+              </span>
               {meal.isFallback && (
                 <span
                   className="text-3xs font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200 print:hidden flex items-center gap-1"
@@ -285,108 +331,22 @@ export const GeneratedMealCard: React.FC<GeneratedMealCardProps> = ({
           </div>
         </div>
 
-        {/* Multi-Selection Pills & Regenerate button */}
-        <div className="flex items-center gap-2 no-print flex-wrap">
-          {/* Quick Selection Pills */}
-          <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-3xs font-bold text-slate-500 uppercase px-1.5 hidden sm:inline">
-              Imprimir:
-            </span>
-
-            {/* Opción A Toggle */}
+        {/* Right side header actions */}
+        <div className="flex items-center gap-2 print:hidden flex-wrap">
+          {onRegenerateMeal && (
             <button
               type="button"
-              onClick={() => onToggleOption('A')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                activeLetters.includes('A')
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-800'
-              }`}
-              title="Incluir / Excluir Opción A en la impresión y exportación"
-            >
-              {activeLetters.includes('A') ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3 text-slate-400" />}
-              <span>Opción A</span>
-            </button>
-
-            {/* Opción B Toggle */}
-            <button
-              type="button"
-              onClick={() => onToggleOption('B')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                activeLetters.includes('B')
-                  ? 'bg-teal-600 text-white shadow-2xs'
-                  : 'bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-teal-800'
-              }`}
-              title="Incluir / Excluir Opción B en la impresión y exportación"
-            >
-              {activeLetters.includes('B') ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3 text-slate-400" />}
-              <span>Opción B</span>
-            </button>
-
-            {/* Opción C Toggle */}
-            {meal.optionC && (
-              <button
-                type="button"
-                onClick={() => onToggleOption('C')}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
-                  activeLetters.includes('C')
-                    ? 'bg-sky-600 text-white shadow-2xs'
-                    : 'bg-slate-100 text-slate-600 hover:bg-sky-50 hover:text-sky-800'
-                }`}
-                title="Incluir / Excluir Opción C en la impresión y exportación"
-              >
-                {activeLetters.includes('C') ? <Check className="w-3 h-3" /> : <Plus className="w-3 h-3 text-slate-400" />}
-                <span>Opción C</span>
-              </button>
-            )}
-
-            {/* Quick 'Todas' Button */}
-            <button
-              type="button"
-              onClick={() => onSetMealOptions(allAvailableLetters)}
-              className="px-2 py-1 rounded-lg text-3xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 transition-colors ml-0.5"
-              title="Seleccionar todas las opciones para este tiempo"
-            >
-              Todas
-            </button>
-          </div>
-
-          {/* Regenerate Meal buttons */}
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              id={`btn-regenerate-${mealIndex}`}
-              onClick={() => onRegenerateMeal(meal.mealName, false)}
+              id={`btn-regen-meal-${mealIndex}`}
+              onClick={() => onRegenerateMeal(meal.mealName, true)}
               disabled={isRegenerating}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
-              title={
-                selectedCount < allAvailableLetters.length
-                  ? `Generar nuevos platillos manteniendo intacta la Opción ${activeLetters.join(', ')} seleccionada para imprimir`
-                  : 'Generar nuevas opciones para este tiempo de comida sin repetir recetas'
-              }
+              className="h-8 px-3 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300/80 shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
+              title="Regenerar las 3 opciones con nuevas variantes"
             >
-              <RefreshCw className={`w-3.5 h-3.5 text-emerald-700 ${isRegenerating && !regeneratingLetter ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">
-                {selectedCount < allAvailableLetters.length
-                  ? `Mezclar (Mantiene ${activeLetters.join('+')})`
-                  : 'Mezclar'}
-              </span>
-              <span className="sm:hidden">Mezclar</span>
+              <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${isRegenerating ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">Cambiar las 3 Opciones</span>
+              <span className="sm:hidden">Cambiar 3</span>
             </button>
-
-            {selectedCount < allAvailableLetters.length && (
-              <button
-                type="button"
-                onClick={() => onRegenerateMeal(meal.mealName, true)}
-                disabled={isRegenerating}
-                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-2xs font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
-                title="Generar las 3 opciones de este tiempo desde cero (sin mantener ninguna)"
-              >
-                <RotateCcw className="w-3 h-3 text-slate-400" />
-                <span className="hidden md:inline">Todo</span>
-              </button>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
