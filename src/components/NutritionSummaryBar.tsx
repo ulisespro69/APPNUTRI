@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MacroNutrientSummary, PatientInfo, SkinfoldMeasurements, GirthMeasurements, BreadthMeasurements, ManualMacroPrescription, ProteinSupplementInfo, ManualNutrientEntry } from '../types';
-import { Flame, PieChart, User, FileEdit, Sparkles, ChevronDown, ChevronUp, Ruler, Weight, Calendar, Percent, Layers, EyeOff, Calculator, Dumbbell, Zap, Info, Check, Sliders, RotateCcw, Target, AlertTriangle, CheckCircle2, ShieldAlert, CupSoda, Heart, X } from 'lucide-react';
+import { Flame, PieChart, User, Sparkles, ChevronDown, ChevronUp, Ruler, Weight, Calendar, Percent, Layers, EyeOff, Calculator, Dumbbell, Zap, Info, Check, Sliders, RotateCcw, Target, AlertTriangle, CheckCircle2, ShieldAlert, CupSoda, Heart, X } from 'lucide-react';
 import { PRESETS, TableGridState } from '../data/smaeData';
 import { SomatotypeCard } from './SomatotypeCard';
 import {
@@ -886,35 +886,6 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     });
   };
 
-  const handleLoadSamplePatientData = () => {
-    onPatientInfoChange({
-      name: 'Carlos Mendoza',
-      date: new Date().toISOString().split('T')[0],
-      goal: 'Desarrollo Muscular y Definición (Endo-mesomorfo)',
-      notes: 'Plan nutricional estructurado según metodología Heath-Carter y SMAE 5ta Edición.',
-      gender: 'Hombre',
-      age: 32,
-      weight: 79.0,
-      height: 1.70,
-      skinfolds: {
-        triceps: 8,
-        subescapular: 10,
-        supraespinal: 8.5,
-        abdominal: 14,
-        musloFrontal: 11,
-        pantorrillaMedial: 6,
-      },
-      girths: {
-        brazoContraido: 37.0,
-        pantorrillaMaximo: 38.0,
-      },
-      breadths: {
-        humeral: 6.4,
-        femoral: 9.4,
-      },
-    });
-  };
-
   return (
     <div className="bg-white rounded-2xl border border-emerald-100/80 shadow-xs p-4 sm:p-5 mb-6 transition-all no-print">
       {/* Top Banner: Datos del Paciente y Prescripción */}
@@ -934,7 +905,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          {hasAnyPatientData ? (
+          {hasAnyPatientData && (
             <button
               id="btn-clear-patient-data"
               type="button"
@@ -944,17 +915,6 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
             >
               <RotateCcw className="w-3 h-3" />
               <span>Iniciar en blanco</span>
-            </button>
-          ) : (
-            <button
-              id="btn-load-sample-patient"
-              type="button"
-              onClick={handleLoadSamplePatientData}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-2xs font-semibold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all cursor-pointer"
-              title="Cargar datos de ejemplo para demostración clínica"
-            >
-              <FileEdit className="w-3 h-3" />
-              <span>Cargar ejemplo</span>
             </button>
           )}
 
