@@ -53,32 +53,41 @@ export function isTitleContradictory(title: string, ingredients: SMAEIngredient[
   }
 
   // 3. Beef / Meat contradiction
-  const claimsBeef = t.includes('bistec') || t.includes('res ') || t.includes('carne asada') || t.includes('ternera');
-  const hasBeef = allFoods.includes('bistec') || allFoods.includes('res') || allFoods.includes('carne magra');
+  const claimsBeef = t.includes('bistec') || t.includes('res ') || t.includes('carne asada') || t.includes('ternera') || t.includes('falda');
+  const hasBeef = allFoods.includes('bistec') || allFoods.includes('res') || allFoods.includes('carne magra') || allFoods.includes('falda');
   if (claimsBeef && !hasBeef) {
     return true;
   }
 
-  // 4. Fish / Seafood contradiction
+  // 4. Pork contradiction
+  const claimsPork = t.includes('cerdo') || t.includes('lomo') || t.includes('chuleta');
+  const hasPork = allFoods.includes('cerdo') || allFoods.includes('lomo') || allFoods.includes('chuleta');
+  if (claimsPork && !hasPork) {
+    return true;
+  }
+
+  // 5. Fish / Seafood contradiction
   const claimsFish =
     t.includes('pescado') ||
     t.includes('tilapia') ||
     t.includes('merluza') ||
     t.includes('salmon') ||
     t.includes('atun') ||
-    t.includes('camaron');
+    t.includes('camaron') ||
+    t.includes('marisco');
   const hasFish =
     allFoods.includes('pescado') ||
     allFoods.includes('tilapia') ||
     allFoods.includes('merluza') ||
     allFoods.includes('salmon') ||
     allFoods.includes('atun') ||
-    allFoods.includes('camaron');
+    allFoods.includes('camaron') ||
+    allFoods.includes('marisco');
   if (claimsFish && !hasFish) {
     return true;
   }
 
-  // 5. Quesadilla contradiction: needs cheese and tortilla
+  // 6. Quesadilla / Cheese contradiction
   const claimsQuesadilla = t.includes('quesadilla');
   const hasCheese = allFoods.includes('queso') || allFoods.includes('requeson');
   const hasTortilla = allFoods.includes('tortilla');
@@ -86,10 +95,68 @@ export function isTitleContradictory(title: string, ingredients: SMAEIngredient[
     return true;
   }
 
-  // 6. Oatmeal contradiction
-  const claimsOats = t.includes('avena');
+  const claimsCheese = t.includes('queso') || t.includes('panela') || t.includes('oaxaca') || t.includes('requeson');
+  if (claimsCheese && !hasCheese) {
+    return true;
+  }
+
+  // 7. Sandwich / Bread contradiction
+  const claimsSandwich = t.includes('sandwich') || t.includes('torta') || t.includes('pan tostado');
+  const hasBread = allFoods.includes('pan') || allFoods.includes('bolillo') || allFoods.includes('telera') || allFoods.includes('baguette');
+  if (claimsSandwich && !hasBread) {
+    return true;
+  }
+
+  // 8. Tacos contradiction
+  const claimsTacos = t.includes('taco') || t.includes('tacos') || t.includes('flautas');
+  if (claimsTacos && !hasTortilla) {
+    return true;
+  }
+
+  // 9. Tostadas contradiction
+  const claimsTostadas = t.includes('tostada');
+  const hasTostadas = allFoods.includes('tostada');
+  if (claimsTostadas && !hasTostadas) {
+    return true;
+  }
+
+  // 10. Oatmeal contradiction
+  const claimsOats = t.includes('avena') || t.includes('porridge');
   const hasOats = allFoods.includes('avena');
   if (claimsOats && !hasOats) {
+    return true;
+  }
+
+  // 11. Legumes contradiction
+  const claimsLentils = t.includes('lenteja');
+  const hasLentils = allFoods.includes('lenteja');
+  if (claimsLentils && !hasLentils) {
+    return true;
+  }
+
+  const claimsBeans = t.includes('frijol') || t.includes('enfrijolada');
+  const hasBeans = allFoods.includes('frijol');
+  if (claimsBeans && !hasBeans) {
+    return true;
+  }
+
+  const claimsChickpeas = t.includes('garbanzo');
+  const hasChickpeas = allFoods.includes('garbanzo');
+  if (claimsChickpeas && !hasChickpeas) {
+    return true;
+  }
+
+  // 12. Rice contradiction
+  const claimsRice = t.includes('arroz');
+  const hasRice = allFoods.includes('arroz');
+  if (claimsRice && !hasRice) {
+    return true;
+  }
+
+  // 13. Yogurt / Smoothie contradiction
+  const claimsYogurt = t.includes('yogur') || t.includes('yogurt') || t.includes('licuado') || t.includes('smoothie');
+  const hasDairy = allFoods.includes('yogur') || allFoods.includes('leche') || allFoods.includes('kefir');
+  if (claimsYogurt && !hasDairy) {
     return true;
   }
 
@@ -240,6 +307,24 @@ export function synthesizeDishTitle(
     return `Pechuga de Pollo a la Plancha con ${shortVeg || 'Verduras'} y ${shortCer || 'Guarnición'}`;
   }
 
+  // --- 1B. PORK / LOMO DE CERDO ---
+  if (protStr.includes('cerdo') || protStr.includes('lomo')) {
+    if (cerStr.includes('tortilla')) {
+      return optionIndex === 0
+        ? `Tacos Suaves de Lomo de Cerdo Magro con ${shortVeg || 'Cebolla Asada y Cilantro'}`
+        : `Lomo de Cerdo Asado en Salsa Verde con ${shortVeg || 'Nopales'} y Tortillas`;
+    }
+    return `Medallones de Lomo de Cerdo Magro a la Plancha con ${shortVeg || 'Calabacitas'} y ${shortCer || 'Arroz'}`;
+  }
+
+  // --- 1C. SHRIMP / CAMARONES ---
+  if (protStr.includes('camaron')) {
+    if (cerStr.includes('tostada')) {
+      return `Tostadas Horneadas de Camarón Cocido al Limón con ${shortVeg || 'Pepino y Jitomate'}`;
+    }
+    return `Camarones al Cilantro y Limón al Vapor con ${shortVeg || 'Espinacas'} y ${shortCer || 'Arroz Blanco'}`;
+  }
+
   // --- 2. EGGS / CLARAS (Huevo / Claras) ---
   if (protStr.includes('huevo') || protStr.includes('claras') || protStr.includes('blanquillo')) {
     const isClaras = protStr.includes('claras');
@@ -271,7 +356,7 @@ export function synthesizeDishTitle(
   ) {
     const fishName = protStr.includes('salmon') ? 'Salmón' : 'Filete de Pescado';
     if (optionIndex === 0) {
-      return `${fishName} a la Plancha al Limón y Ajo con ${shortVeg || 'Calabacitas'} y ${shortCer || 'Arroz'}`;
+      return `${fishName} a la Plancha al Limón y Finas Hierbas con ${shortVeg || 'Calabacitas'} y ${shortCer || 'Arroz'}`;
     }
     if (optionIndex === 1) {
       return `${fishName} Empapelado con ${shortVeg || 'Espinacas y Jitomate'} y ${shortCer || 'Papa Cocida'}`;
@@ -351,27 +436,57 @@ export function synthesizeDishTitle(
 
   // --- 9. OATS / CEREAL + FRUIT (Desayuno dulce o Colación) ---
   if (cerStr.includes('avena')) {
+    const toppingLabel = shortFat ? `Topping de ${shortFat}` : 'Canela y Semillas';
     return optionIndex === 0
-      ? `Bowl Cálido de Avena Integral con ${shortFruit || 'Manzana y Canela'} y ${shortFat || 'Almendras'}`
+      ? `Bowl Cálido de Avena Integral con ${shortFruit || 'Manzana'} y ${toppingLabel}`
       : optionIndex === 1
-      ? `Avena Fría Trasnochada con ${shortFruit || 'Fruta Fresca'} y ${shortFat || 'Nueces'}`
-      : `Porridge Cremoso de Avena con ${shortFruit || 'Plátano o Fresas'} y Semillas`;
+      ? `Avena Fría Trasnochada con ${shortFruit || 'Fruta Fresca'} y ${toppingLabel}`
+      : `Porridge Cremoso de Avena con ${shortFruit || 'Plátano o Fresas'} y ${toppingLabel}`;
   }
 
-  // --- 10. YOGURT + FRUIT (Desayuno o Colación) ---
+  // --- 10. YOGURT + FRUIT / SNACK (Desayuno o Colación) ---
   if (protStr.includes('yogur') || (mainDairy && cleanStr(mainDairy.foodName).includes('yogur'))) {
+    const toppingLabel = shortFat ? `Topping de ${shortFat}` : 'Topping Crocante';
+    if (isSnack) {
+      return optionIndex === 0
+        ? `Parfait Ligero de Yogur Natural con ${shortFruit || 'Fresas'} y ${toppingLabel}`
+        : optionIndex === 1
+        ? `Copa Refrescante de Yogur con ${shortFruit || 'Papaya'} y ${shortCer || 'Amaranto'}`
+        : `Bowl de Yogur Griego con ${shortFruit || 'Frutos Rojos'} y Semillas`;
+    }
     return optionIndex === 0
-      ? `Copa de Yogur Natural Descremado con ${shortFruit || 'Fresas'} y ${shortFat || 'Almendras Tostadas'}`
-      : `Bowl Refrescante de Yogur con ${shortFruit || 'Papaya en Cubos'} y ${shortCer || 'Amaranto o Avena'}`;
+      ? `Copa de Yogur Natural con ${shortFruit || 'Fresas'} y ${toppingLabel}`
+      : `Bowl Refrescante de Yogur con ${shortFruit || 'Papaya en Cubos'} y ${shortCer || 'Amaranto'}`;
+  }
+
+  // --- 10B. COTTAGE CHEESE OR REQUESÓN + FRUIT / SNACK ---
+  if (protStr.includes('cottage') || protStr.includes('requeson')) {
+    if (isSnack) {
+      const cheeseName = protStr.includes('cottage') ? 'Queso Cottage' : 'Requesón Fresco';
+      return optionIndex === 0
+        ? `Copa de ${cheeseName} con ${shortFruit || 'Papaya en Cubos'} y ${shortFat || 'Nuez'}`
+        : optionIndex === 1
+        ? `Tostada Horneada con ${cheeseName} y Rebanadas de ${shortVeg || shortFruit || 'Pepino'}`
+        : `Rollito Ligero de ${cheeseName} con ${shortVeg || 'Espinacas'} y Semillas`;
+    }
   }
 
   // --- 11. FRUIT + NUTS/SEEDS (Colaciones) ---
   if (mainFruit && mainFat && isSnack) {
     return optionIndex === 0
-      ? `Plato de ${shortFruit} Fresca en Rodajas con ${shortFat} Tostadas`
+      ? `Plato de ${shortFruit} Fresca con Topping de ${shortFat}`
       : optionIndex === 1
       ? `Mix Energético de ${shortFruit} con ${shortFat}`
       : `Snack Crujiente de ${shortFruit} con Semillas Saludables`;
+  }
+
+  // --- 11B. VEGETABLE SNACKS (Jícama, Pepino con limón) ---
+  if (mainVeg && isSnack) {
+    return optionIndex === 0
+      ? `Bastones Frescos de ${shortVeg} con Limón y Sal Marina`
+      : optionIndex === 1
+      ? `Crudités de ${shortVeg} con Topping de ${shortFat || 'Semillas de Calabaza'}`
+      : `Ensalada Botanera de ${shortVeg} al Limón`;
   }
 
   // --- 12. VEGETABLES + CEREAL ---
@@ -400,43 +515,78 @@ export function synthesizePreparation(title: string, ingredients: SMAEIngredient
   const vegStr = mainVeg ? cleanStr(mainVeg.foodName) : '';
   const fruitStr = mainFruit ? cleanStr(mainFruit.foodName) : '';
 
+  // Detect cooking fat vs table/topping fat
+  const cookingOil = ingredients.find(
+    (i) => cleanStr(i.smaeGroup).includes('sin prote') && cleanStr(i.foodName).includes('aceite')
+  );
+  const cookingFatText = cookingOil
+    ? 'en sartén precalentado con la porción de aceite asignada'
+    : 'al comal o en sartén antiadherente sin grasa añadida';
+
+  // Detect topping nuts or seeds
+  const toppingFat = ingredients.find(
+    (i) =>
+      cleanStr(i.smaeGroup).includes('con prote') ||
+      cleanStr(i.foodName).includes('almendra') ||
+      cleanStr(i.foodName).includes('nuez') ||
+      cleanStr(i.foodName).includes('chia') ||
+      cleanStr(i.foodName).includes('ajonjoli') ||
+      cleanStr(i.foodName).includes('pepita') ||
+      cleanStr(i.foodName).includes('pistache')
+  );
+  const toppingName = toppingFat ? toShortCulinaryName(toppingFat.foodName) : '';
+
+  // Detect seasoning: herbs, oregano, lemon, spices (NO garlic)
+  const hasSeasoning = ingredients.some(
+    (i) =>
+      cleanStr(i.foodName).includes('especias') ||
+      cleanStr(i.foodName).includes('oregano') ||
+      cleanStr(i.foodName).includes('pimienta') ||
+      cleanStr(i.foodName).includes('cilantro') ||
+      cleanStr(i.foodName).includes('hierbas')
+  );
+  const seasonText = hasSeasoning
+    ? 'sazonando al gusto con orégano, cilantro fresco y finas hierbas naturales'
+    : 'sazonando con una pizca de sal marina, pimienta y hierbas de olor';
+
   // Chicken
   if (protStr.includes('pollo') || protStr.includes('pechuga')) {
-    return `1. Cocinar la pechuga de pollo a la plancha o en sartén antiadherente con la porción de grasa asignada hasta que esté bien dorada y cocida.
-2. Saltear o cocer al vapor las verduras (${vegStr || 'vegetales'}) sazonando con una pizca de sal marina y hierbas de olor.
-3. Calentar el cereal (${cerStr || 'tortillas/arroz'}) al comal y servir caliente con salsa casera al gusto.`;
+    const toppingStep = toppingName ? `\n4. Espolvorear las ${toppingName} por encima como topping crujiente.` : '';
+    return `1. Cocinar la pechuga de pollo ${cookingFatText} ${seasonText} hasta que esté bien dorada y jugosa.
+2. Saltear o cocer al vapor las verduras (${vegStr || 'vegetales'}) sazonando ligeramente.
+3. Calentar el cereal (${cerStr || 'tortillas/arroz'}) al comal y servir caliente con salsa casera al gusto.${toppingStep}`;
   }
 
   // Eggs / Omelette
   if (protStr.includes('huevo') || protStr.includes('claras')) {
     const isOmelette = cleanStr(title).includes('omelette');
     if (isOmelette) {
-      return `1. Batir los huevos/claras con una pizca de sal y pimienta.
-2. Verter en el sartén precalentado con la cucharadita de grasa asignada; cuando comience a cuajar, añadir las verduras (${vegStr || 'espinacas'}).
+      return `1. Batir los huevos/claras con una pizca de sal y pimienta negra.
+2. Verter ${cookingFatText}; cuando comience a cuajar, añadir las verduras (${vegStr || 'espinacas'}).
 3. Doblar suavemente en forma de media luna (omelette) y cocinar 1 minuto más. Servir acompañado de ${cerStr || 'la porción de cereal'}.`;
     }
     return `1. Batir los huevos/claras en un tazón con una pizca de sal.
-2. Saltear las verduras en el sartén con la porción de grasa asignada por 2 minutos.
+2. Saltear las verduras (${vegStr || 'verduras'}) ${cookingFatText} ${seasonText} por 2 minutos.
 3. Incorporar el huevo y revolver a fuego medio hasta alcanzar la consistencia deseada. Servir con ${cerStr || 'tortillas calientes'}.`;
   }
 
   // Fish
   if (protStr.includes('pescado') || protStr.includes('tilapia') || protStr.includes('salmon')) {
-    return `1. Sazonar el filete de pescado con jugo de limón fresco, ajo picado y finas hierbas.
-2. Cocinar a la plancha o empapelado en papel aluminio con las verduras por 8-10 minutos.
+    return `1. Sazonar el filete de pescado con jugo de limón fresco, pimienta y finas hierbas aromáticas.
+2. Cocinar ${cookingFatText} o empapelado con las verduras por 8-10 minutos.
 3. Servir caliente acompañado de ${cerStr || 'la porción de arroz o tostadas'}.`;
   }
 
   // Tuna
   if (protStr.includes('atun')) {
     return `1. Drenar muy bien la lata de atún en agua.
-2. En un tazón, mezclar el atún con las verduras picadas (${vegStr || 'pepino y jitomate'}) y gotas de limón.
+2. En un tazón, mezclar el atún con las verduras picadas (${vegStr || 'pepino y jitomate'}) y gotas de limón ${seasonText}.
 3. Montar sobre las tostadas horneadas o rebanadas de pan y decorar con la porción de aguacate o aceite asignada.`;
   }
 
   // Beef
   if (protStr.includes('res') || protStr.includes('bistec')) {
-    return `1. Asar el bistec magro al comal o plancha bien caliente con la porción de grasa asignada y sazonar con limón y pimienta.
+    return `1. Asar el bistec magro ${cookingFatText} sazonando con jugo de limón, pimienta negra y orégano.
 2. Saltear o asar las verduras al comal junto a la carne.
 3. Servir inmediatamente con ${cerStr || 'la porción de cereal asignada'}.`;
   }
@@ -450,22 +600,29 @@ export function synthesizePreparation(title: string, ingredients: SMAEIngredient
 
   // Oatmeal
   if (cerStr.includes('avena')) {
-    return `1. Cocinar la avena en agua hirviendo o leche con una raja de canela a fuego bajo por 4-5 minutos hasta que esté suave y cremosa.
-2. Servir en un tazón y añadir la fruta fresca picada en cubos.
-3. Espolvorear las semillas o nueces tostadas por encima para dar textura crocante.`;
+    const toppingStep = toppingName
+      ? `3. Espolvorear las ${toppingName} por encima como topping crujiente y nutritivo.`
+      : '3. Disfrutar tibio o frío acompañado de agua natural.';
+    return `1. Cocinar la avena en agua hirviendo o leche con una raja de canela a fuego bajo por 4-5 minutos hasta que esté cremosa.
+2. Servir en un tazón y añadir la fruta fresca picada en cubos (${fruitStr || 'fruta'}).
+${toppingStep}`;
   }
 
   // Fruit + Yogurt or Nuts
   if (fruitStr && (protStr.includes('yogur') || mainDairy || mainFat)) {
+    const toppingStep = toppingName
+      ? `3. Añadir las ${toppingName} por encima como topping crujiente y disfrutar.`
+      : '3. Mezclar suavemente y disfrutar fresco.';
     return `1. Lavar, desinfectar y cortar la fruta fresca en cubos o rebanadas delgadas.
-2. Colocar en una copa o tazón, incorporar el yogur si está asignado y mezclar suavemente.
-3. Añadir las nueces o semillas tostadas por encima y disfrutar frío.`;
+2. Colocar en una copa o tazón e incorporar el yogur si está asignado.
+${toppingStep}`;
   }
 
   // Default clean preparation
+  const toppingStep = toppingName ? ` Decorar con las ${toppingName} como topping.` : '';
   return `1. Pesar o medir con exactitud los ingredientes según la guía del SMAE 5ta edición.
-2. Cocinar o saltear a fuego medio utilizando la porción de grasa asignada.
-3. Servir de forma atractiva y balanceada, acompañando con agua natural.`;
+2. Cocinar los alimentos ${cookingFatText} ${seasonText}.
+3. Servir de forma balanceada y apetecible.${toppingStep}`;
 }
 
 /**

@@ -25,9 +25,29 @@
   background: #94a3b8;
 }
 
+/* Quitar flechas/spinners de inputs numéricos para facilitar ingreso manual de decimales */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Asegurar dirección de texto estricta de izquierda a derecha (LTR) */
+input, textarea {
+  direction: ltr;
+}
+input[type="text"]:not([class*="text-center"]):not([class*="text-right"]),
+input[type="search"]:not([class*="text-center"]):not([class*="text-right"]) {
+  text-align: left;
+}
+
 @media print {
   @page {
-    margin: 10mm 12mm 10mm 12mm;
+    margin: 8mm 10mm 8mm 10mm;
     size: letter portrait;
   }
   body {
@@ -51,5 +71,15 @@
   }
   #printable-plan-container {
     margin-top: 0 !important;
+    padding: 0 !important;
   }
 }
+
+/* Ocultar cualquier contenedor secundario de llenado de datos en tarjetas de fórmulas */
+#card-formula-harris-benedict > div:first-child > div:nth-of-type(2),
+#card-formula-mifflin-st-jeor > div:first-child > div:nth-of-type(2),
+#card-formula-katch-mcardle > div:first-child > div:nth-of-type(2),
+#card-formula-cunningham > div:first-child > div:nth-of-type(2) {
+  display: none !important;
+}
+

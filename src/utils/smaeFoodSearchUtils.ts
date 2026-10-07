@@ -56,6 +56,41 @@ export function searchSpecificSmaeFood(
     const normName = normalizeSearchString(food.name);
     const nameWords = normName.split(/[^\w]+/).filter(Boolean);
 
+    // Special culinary category checks (topping, especias, condimento, sazon)
+    if (normQuery.includes('topping')) {
+      const isToppingCandidate =
+        food.category === 'grasas_con_proteina' ||
+        food.groupId === 'grasas_con_proteina' ||
+        normName.includes('topping') ||
+        normName.includes('almendra') ||
+        normName.includes('nuez') ||
+        normName.includes('chia') ||
+        normName.includes('ajonjoli') ||
+        normName.includes('pepita') ||
+        (food.notes && normalizeSearchString(food.notes).includes('topping'));
+      if (isToppingCandidate) {
+        exactMatches.push(food);
+        seenIds.add(food.id);
+        continue;
+      }
+    }
+
+    if (normQuery.includes('especias') || normQuery.includes('condimento') || normQuery.includes('sazon')) {
+      const isSeasoning =
+        food.category === 'libres' ||
+        food.groupId === 'libres' ||
+        normName.includes('hierbas') ||
+        normName.includes('especias') ||
+        normName.includes('condimento') ||
+        normName.includes('oregano') ||
+        normName.includes('pimienta');
+      if (isSeasoning) {
+        exactMatches.push(food);
+        seenIds.add(food.id);
+        continue;
+      }
+    }
+
     // 1. Exact or direct matches
     // Food starts with the full search query or the exact primary word is the first word
     const startsWithFull = normName.startsWith(normQuery);
@@ -122,6 +157,26 @@ export function searchSpecificSmaeFood(
       }
     }
   }
+
+  // Sort exact matches: exact name equality first, then startsWith ordered by length, then others
+  exactMatches.sort((a, b) => {
+    const normA = normalizeSearchString(a.name);
+    const normB = normalizeSearchString(b.name);
+    if (normA === normQuery && normB !== normQuery) return -1;
+    if (normB === normQuery && normA !== normQuery) return 1;
+
+    const startsA = normA.startsWith(normQuery);
+    const startsB = normB.startsWith(normQuery);
+    if (startsA && !startsB) return -1;
+    if (!startsA && startsB) return 1;
+
+    // Prioritize shorter name when both start with query
+    if (startsA && startsB) {
+      return normA.length - normB.length;
+    }
+
+    return normA.localeCompare(normB);
+  });
 
   // Sort close matches by relevance score
   closeMatches.sort((a, b) => b.score - a.score);

@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
@@ -9,7 +10,7 @@ import { rectifyFullPlan, rectifyMealMenu, rectifyMenuOption, ensureMealVariety 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -119,7 +120,7 @@ const mealMenuSchema = {
     optionC: {
       type: Type.OBJECT,
       properties: {
-        title: { type: Type.STRING, description: "Nombre atractivo y descriptivo del platillo o preparación para la Opción C (completamente diferente e innovador frente a A y B)" },
+        title: { type: Type.STRING, description: "Nombre atractivo, descriptivo y congruente del platillo para la Opción C (innovador y diferente a A y B)" },
         description: { type: Type.STRING, description: "Breve descripción general del menú" },
         ingredients: {
           type: Type.ARRAY,
@@ -197,8 +198,10 @@ const fullMenuResponseSchema = {
 
 // Helper for resilient Gemini API calls with backoff and model fallbacks
 const CANDIDATE_MODELS = [
-  'gemini-3.8-flash',
+  'gemini-2.5-flash',
   'gemini-3.1-flash-lite',
+  'gemini-2.5-flash-lite',
+  'gemini-3.8-flash',
   'gemini-flash-latest',
 ];
 
@@ -226,22 +229,22 @@ async function generateWithRetryAndFallback(params: {
   let lastError: any = null;
 
   for (const model of CANDIDATE_MODELS) {
-    const maxAttempts = 3;
+    const maxAttempts = 1;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        console.log(`[Gemini] Attempting generation with model ${model} (attempt ${attempt}/${maxAttempts})...`);
+        console.log(`[Gemini] Generando con modelo ultrarrápido ${model}...`);
         
         const config: any = {
           systemInstruction: params.systemInstruction,
-          temperature: params.temperature ?? 0.4,
+          temperature: params.temperature ?? 0.35,
           responseMimeType: 'application/json',
           responseSchema: params.responseSchema,
         };
 
-        // thinkingConfig is supported on Gemini 3 series models
+        // Minimal thinking to maximize response speed and avoid UI freezes
         if (model.startsWith('gemini-3')) {
           config.thinkingConfig = {
-            thinkingLevel: model.includes('lite') ? ThinkingLevel.MINIMAL : ThinkingLevel.LOW,
+            thinkingLevel: ThinkingLevel.MINIMAL,
           };
         }
 
@@ -256,31 +259,12 @@ async function generateWithRetryAndFallback(params: {
           throw new Error('Respuesta vacía.');
         }
 
-        console.log(`[Gemini] Generación exitosa con el modelo ${model}.`);
+        console.log(`[Gemini] Generación exitosa con ${model}.`);
         return JSON.parse(text);
       } catch (err: any) {
         lastError = err;
-        const errMsg = err?.message || String(err);
-        const is503OrRateLimit =
-          errMsg.includes('503') ||
-          errMsg.includes('UNAVAILABLE') ||
-          errMsg.includes('high demand') ||
-          errMsg.includes('429') ||
-          errMsg.includes('RESOURCE_EXHAUSTED') ||
-          errMsg.includes('quota');
-
-        // Note: We avoid using the word "Error" here to prevent the AI Studio environment
-        // from treating this gracefully handled retry as an application crash.
-        console.log(`[Gemini] Aviso: el modelo ${model} no está disponible temporalmente (intento ${attempt}/${maxAttempts}). Detalle: ${is503OrRateLimit ? 'Alta demanda / Cuota' : 'Fallo en solicitud'}.`);
-
-        if (is503OrRateLimit && attempt < maxAttempts) {
-          const waitTime = attempt * 2000;
-          console.log(`[Gemini] Reintentando modelo ${model} tras pausa de ${waitTime}ms...`);
-          await sleep(waitTime);
-        } else {
-          // Proceed to test next candidate model
-          break;
-        }
+        console.log(`[Gemini] Modelo ${model} no respondió de inmediato, alternando al siguiente...`);
+        break;
       }
     }
   }
@@ -291,7 +275,7 @@ async function generateWithRetryAndFallback(params: {
 // API Endpoint to generate all 5 meals
 app.post('/api/generate-menus', async (req, res) => {
   try {
-    const { tableData, patientName, dietNotes, preferredFoods, dislikedFoods, mealPreferences } = req.body;
+    const { tableData, patientName, dietNotes, preferredFoods, dislikedFoods, mealPreferences, proteinSupplement, manualNutrientEntry } = req.body;
 
     if (!tableData || typeof tableData !== 'object') {
       return res.status(400).json({ error: 'tableData es requerido' });
@@ -300,72 +284,75 @@ app.post('/api/generate-menus', async (req, res) => {
     const systemInstruction = `Eres un nutriólogo clínico especialista de primer nivel en el Sistema Mexicano de Alimentos Equivalentes (SMAE 5ta Edición).
 Tu labor es recibir la distribución de equivalentes por tiempo de comida calculada por una nutrióloga clínica y transformarla en menús extraordinariamente variados, deliciosos, apetecibles, económicos y con auténtica cocina mexicana cotidiana y saludable.
 
-DEBES GENERAR OBLIGATORIAMENTE TRES OPCIONES (Opción A, Opción B y Opción C) PARA CADA TIEMPO DE COMIDA QUE TENGA EQUIVALENTES ASIGNADOS.
+DEBES GENERAR OBLIGATORIAMENTE TRES OPCIONES COMPLETAS (Opción A, Opción B y Opción C) PARA CADA TIEMPO DE COMIDA QUE TENGA EQUIVALENTES ASIGNADOS.
+NOTA CRÍTICA: Se generan EXACTAMENTE 3 OPCIONES (A, B y C). La opción D ha sido eliminada por solicitud del usuario.
 
-REGLAS CRÍTICAS DE CALIDAD, VARIEDAD Y NO REPETICIÓN (MÁXIMA PRIORIDAD):
-1. ROTACIÓN ESTRICTA Y EXCLUSIÓN DE OPCIONES PREVIAS:
-   - Cada una de las 3 opciones (Opción A, Opción B y Opción C) dentro de un mismo tiempo de comida DEBE utilizar un ingrediente proteico principal distinto, un cereal base distinto, una fruta distinta, una verdura distinta y una grasa distinta.
-   - NUNCA pongas pollo en Opción A y pollo en Opción B.
-   - Comienza SIEMPRE con menús y recetas que NO hayan sido mostrados previamente como opciones al paciente. (Ver lista de exclusiones si aplica).
-2. COHERENCIA CULINARIA HUMANA (ARMONÍA Y SENTIDO COMÚN):
-   - Trata que los menús tengan una coherencia lógica y armonía culinaria real entre cada grupo de alimento, como si el platillo fuera pensado y cocinado por una persona (un chef o nutriólogo humano).
-   - No mezcles ingredientes al azar o que no combinan (por ejemplo, no combines pescado con frutas incongruentes en un mismo taco). Construye platillos con sentido común gastronómico y buen sabor.
-3. INSPIRACIÓN EN INTERNET Y ADAPTACIÓN ESTRICTA AL SMAE:
-   - Toma en cuenta más opciones y recetas creativas de internet para aportar mayor variedad.
-   - OBLIGATORIO: Ajusta minuciosamente estas recetas al GRUPO DE ALIMENTOS correspondiente que tomas como referencia según el documento del SMAE (Sistema Mexicano de Alimentos Equivalentes, 5ta Ed.) y al NÚMERO DE EQUIVALENTES dados por el usuario.
-4. VERIFICACIÓN MINUCIOSA (DOBLE CHEQUEO):
-   - Eres extremadamente minucioso. ANTES de mostrar la respuesta, revisa mentalmente y asegúrate de que cada ingrediente corresponda ESTRICTAMENTE al grupo de alimento solicitado y al equivalente dado.
-   - Evita errores graves de clasificación (ej. no clasifiques aguacate en frutas ni la papa en verduras).
-5. ROTACIÓN INTEGRAL A LO LARGO DEL DÍA:
-   - NUNCA repitas el mismo ingrediente proteico principal entre los distintos tiempos del día.
-6. RESPETO DE PREFERENCIAS Y AVERSIONES:
-   - ALIMENTOS PREFERIDOS (FAVORITOS): Incorpóralos con máxima prioridad.
-   - ALIMENTOS NO PREFERIDOS (A EVITAR / AVERSIÓN): QUEDA TERMINANTEMENTE PROHIBIDO incluir cualquier ingrediente mencionado.
-7. CONSULTA Y RECTIFICACIÓN EXACTA DEL SMAE 5TA EDICIÓN:
-   - Cada ingrediente DEBE indicar su medida casera y gramaje neto exacto según el SMAE oficial multiplicado por el número de equivalentes (equivalentsCount):
-     * Cereales sin grasa: 1 eq Tortilla de maíz = 1 pza (30g) | 1 eq Arroz cocido = 1/3 tza (48g) | 1 eq Avena en hojuelas = 1/3 tza (20g) | 1 eq Papa cocida = 1/2 pza (90g) | 1 eq Pan integral = 1 rebanada (25g).
-     * Leguminosas: 1 eq Frijoles cocidos = 1/2 tza (86g) | 1 eq Lentejas cocidas = 1/2 tza (100g).
-     * AOA Muy Bajo en Grasa: 1 eq Pechuga de pollo = 30g | 1 eq Pescado blanco = 40g | 1 eq Atún = 1/3 lata (40g) | 1 eq Claras = 2 pzas (66g).
-     * AOA Bajo en Grasa: 1 eq Queso panela = 40g | 1 eq Bistec de res = 30g | 1 eq Jamón de pavo = 2 rebanadas (42g).
-     * AOA Moderado en Grasa: 1 eq Huevo entero = 1 pza (50g) | 1 eq Queso Oaxaca = 30g | 1 eq Salchicha de pavo = 1 pza (45g).
-     * Leche: 1 eq Leche descremada = 1 tza (240ml) | 1 eq Yogur natural = 3/4 tza (150g).
-     * Aceites sin proteína: 1 eq Aguacate Hass = 1/3 pza (45g) | 1 eq Aceite de oliva = 1 cdita (5ml).
-     * Aceites con proteína: 1 eq Almendras = 10 pzas (12g) | 1 eq Nuez = 3 pzas (12g).
-     * Frutas: 1 eq Manzana = 1 pza (106g) | 1 eq Plátano = 1/2 pza (60g) | 1 eq Fresas = 1 tza (152g) | 1 eq Papaya = 1 tza (140g).
-     * Verduras: 1 eq Espinaca = 1/2 tza (90g) | 1 eq Nopal = 1 tza (150g) | 1 eq Jitomate = 1 pza (120g) | 1 eq Calabacita = 1 tza (110g).
-8. FORMATO DE FRACCIONES Y MULTIPLICACIÓN MATEMÁTICA (IMPORTANTE):
-   - Cuando la porción base de un alimento en el SMAE sea una fracción (ej. 1/2 taza, 1/3 pieza, 3/4 taza) y el usuario te pida varios equivalentes, DEBES MULTIPLICAR LA FRACCIÓN matemáticamente.
-   - NUNCA dejes la fracción sin resolver (no digas "3/2 tazas" ni "1/2 taza x 3").
-   - Muestra el resultado final SIEMPRE como un número entero o con un solo decimal (ej. "1.5 tazas" o "0.6 tazas").
-9. CUADRATURA MATEMÁTICA Y NOMBRES CANÓNICOS:
-   - Para cada tiempo de comida, Opción A, B y C DEBEN CUBRIR EXACTAMENTE LA MISMA SUMA DE EQUIVALENTES asignados en la tabla por la nutrióloga.
-   - En 'smaeGroup', usa los nombres oficiales (ej. "Verdura", "Fruta", "Cereales sin grasa").
-10. COHERENCIA ABSOLUTA ENTRE EL NOMBRE DEL PLATILLO Y SUS INGREDIENTES:
-   - El título (title) de cada opción DEBE reflejar fiel y exactamente los ingredientes reales asignados a esa opción.
-   - NUNCA llames a un platillo 'Omelette', 'Huevos revueltos' o similar si la opción no contiene huevo o claras (por ejemplo, si el ingrediente proteico asignado es pechuga de pollo, el platillo debe titularse 'Pechuga de pollo a la plancha...', 'Fajitas de pollo...', etc., NUNCA 'Omelette').
-   - Si el ingrediente es pescado o atún, el título debe reflejar pescado o atún.
-   - Si el ingrediente es bistec o res, el título debe reflejar bistec o res.
-   - Si el ingrediente es queso o requesón, el título debe reflejar queso o quesadillas.
-   - Las instrucciones de preparación culinaria (preparation) deben detallar la preparación de esos mismos ingredientes con total sentido gastronómico.
-11. REGLA ESTRICTA DE VARIEDAD (MÁXIMO 2 VECES POR TIEMPO DE COMIDA):
-   - En cada tiempo de comida (ej. Desayuno, Comida o Cena), NINGÚN ingrediente o alimento base puede repetirse más de dos veces entre las tres opciones (Opción A, Opción B y Opción C).
-   - Si un alimento (ej. tortilla de maíz, huevo, jitomate, pechuga de pollo, aceite de oliva) ya se usó en la Opción A y en la Opción B, ESTÁ PROHIBIDO usarlo una 3ra vez en la Opción C. En la Opción C debes seleccionar otro ingrediente del mismo grupo equivalente del SMAE (ej. arroz, papa, avena o pan integral en lugar de tortilla; calabacita en lugar de jitomate; pescado o claras en lugar de pollo; aguacate o aceitunas en lugar de aceite).
-   - Usa los alimentos e ingredientes del SMAE 5ta Edición y sus cantidades exactas multiplicadas por el número de equivalentes.
-12. MANEJO DE GRASAS SIN PROTEÍNA ("Aceite sin Proteína"):
-   - Si se asignan 2 o más equivalentes de "Aceite sin Proteína" a un tiempo de comida, OBLIGATORIAMENTE DEBES:
-     a) Usar UN equivalente (ej. "Aceite de oliva", "Aceite vegetal") EXCLUSIVAMENTE para la preparación/cocción del platillo.
-     b) Usar el RESTO de equivalentes como un ingrediente diferente que NO sea aceite (ej. "Crema de vaca", "Aguacate Hass", "Mayonesa").
-   - MANTÉN LA COHERENCIA CULINARIA: Si el platillo es un sándwich o similar, y tienes equivalentes de grasa disponibles para ingrediente, usa opciones lógicas y coherentes como "Crema de vaca" o "Mayonesa", NUNCA agregues cucharadas de aceite crudo al pan.
-13. USO DE NUEVOS ALIMENTOS (MAZAPÁN, GRANOLA, CEREALES DE CAJA, PANES, PIZZA, PURÉS Y ALMÍBARES): De acuerdo al SMAE y fuentes añadidas:
-   - "Azúcares con grasa": PUEDES incluir "Mazapán" o "Mazapán de cacahuate" (1/3 pieza = 1 eq) como postre o snack.
-   - "Cereales sin grasa": PUEDES incluir cereales comerciales ("Zucaritas", "Choco Krispis", "Froot Loops" 1/3 taza = 1 eq, o "Corn Flakes" 1/2 taza = 1 eq); o "Pan para hamburguesa" (1/2 pieza = 1 eq) y "Pan para hot dog" (1/2 pieza = 1 eq) para platillos de comida rápida saludable.
-   - "Cereales con grasa": PUEDES incluir "Granola natural o con miel" o "Granola baja en grasa" (3 cucharadas = 1 eq), "Puré de papa preparado" (1/2 taza = 1 eq), o "Pizza de queso o tradicional" (2/3 de rebanada = 1 eq).
-   - "Frutas": PUEDES incluir "Durazno en almíbar" (2 mitades = 1 eq), "Piña en almíbar" (1 rebanada = 1 eq), "Cóctel de frutas en almíbar" (1/4 taza = 1 eq) o "Puré de manzana" (1/2 taza = 1 eq).
-14. EXCLUSIÓN ESTRICTA DE POZOLE: NUNCA sugieras ni incluyas "Pozole" ni "Maíz pozolero / Cacahuazintle" en las opciones generadas automáticamente por IA. Este alimento queda EXCLUSIVAMENTE reservado para adición manual en el buscador por parte del usuario o nutriólogo, o únicamente si el usuario lo solicita explícitamente en sus notas.`;
+REGLA DE ORO DE CONGRUENCIA CULINARIA (TÍTULO VS INGREDIENTES):
+- El título del platillo DEBE corresponder 100% a los alimentos reales presentes en la lista de ingredientes del menú:
+  * Si la receta NO tiene huevo o claras, JAMÁS debe titularse "Omelette", "Huevos revueltos", "Frittata" o similar.
+  * Si la receta NO contiene pollo o pechuga, JAMÁS debe titularse "Pechuga de pollo", "Pollo al comal", etc.
+  * Si la receta NO contiene res o bistec, JAMÁS debe titularse "Bistec", "Carne asada", "Fajitas de res", etc.
+  * Si la receta NO contiene pescado o atún, JAMÁS debe titularse "Filete de pescado", "Salmón", "Atún", etc.
+  * Si la receta NO contiene pan de caja o bolillo, JAMÁS debe titularse "Sándwich", "Torta" o "Pan tostado".
+  * Si la receta NO contiene queso y tortillas, JAMÁS debe titularse "Quesadillas" o "Sincronizada".
+  * Si la receta NO contiene avena, JAMÁS debe titularse "Avena", "Porridge" o similar.
+- El título debe ser atractivo, específico y apetecible mencionando la preparación y los alimentos protagonistas reales:
+  Ejemplos excelentes:
+  * "Filete de Tilapia al Limón con Calabacitas Salteadas y Arroz al Vapor"
+  * "Tostadas Horneadas con Salpicón de Pechuga de Pollo y Nopales"
+  * "Bistec de Res Magro en Salsa Verde con Nopales Asados y Tortillas de Maíz"
+  * "Claras de Huevo Revueltas con Espinacas, Frijoles de la Olla y Tortillas"
+  * "Bowl de Avena Integral Cocida con Manzana en Gajos y Almendras Tostadas"
+  * "Quesadillas Comaleadas de Queso Oaxaca con Flor de Calabaza y Salsa Casera"
+  * "Sopa Tradicional de Lentejas con Zanahorias, Espinacas y Arroz Blanco"
+
+CATÁLOGO EXTENSO DE ALIMENTOS DEL SMAE 5TA EDICIÓN PARA MÁXIMA VARIEDAD:
+Aprovecha la inmensa variedad del SMAE 5ta edición mexicano. Rota ampliamente los alimentos entre tiempos de comida y opciones:
+- Verduras: Nopales cocidos, calabacitas tiernas, chayote al vapor, flor de calabaza, espinacas cocidas o frescas, acelgas, verdolagas, huitlacoche, pimiento morrón en tiras, jitomate bola o guajillo, tomatillo verde con chile, ejotes tiernos, champiñones rebanados, setas asadas, espárragos al vapor, brócoli, coliflor, pepino con cáscara, jícama en tiras, apio picado, lechuga romana/orejona, betabel rallado, zanahoria cocida o rallada, germinado de alfalfa.
+- Frutas: Papaya picada, melón verde o valenciano, sandía fresca, fresas rebanadas, zarzamoras, moras azules, frambuesas, manzana roja o verde en gajos, pera fresca, plátano dominico, durazno fresco o en mitades, ciruela roja, guayaba en cuartos, kiwi rebanado, toronja en supremas, naranja en gajos, mandarina, piña fresca picada, mango en cubos, higo fresco, uvas rojas o verdes.
+- Cereales sin grasa: Tortilla de maíz nixtamalizada comaleada (1 pza = 30g), arroz blanco o integral cocido al vapor (1/3 tza = 48g), papa cocida o al vapor con cáscara (1/2 pza mediana = 90g), camote horneado (1/3 pza = 50g), elote blanco cocido desgranado (1/2 tza = 83g), avena integral en hojuelas cruda o cocida (1/3 tza = 20g), quinoa cocida (1/3 tza = 62g), tostadas horneadas de maíz sin freír tipo Saníssimo (2 pzas = 24g), pasta integral cocida (1/3 tza = 47g), pan integral de caja (1 rebanada = 25g), bolillo o telera sin migajón (1/2 pza = 30g).
+- Cereales con grasa: Granola de avena con miel (3 cdas = 20g), galleta de avena casera con pasas (1 pza pequeña = 25g), barra de amaranto con chocolate/cacao (1 pza = 20g), puré de papa preparado con mantequilla y leche (1/2 tza = 100g), totopos horneados/fritos (6 pzas = 15g), tamal tradicional de pollo o queso (1/4 pza = 45g), pan dulce tradicional (1/3 pza = 25g).
+- Leguminosas: Frijoles negros enteros o machacados de la olla (1/2 tza = 86g), frijoles bayos cocidos (1/2 tza = 86g), lentejas cocidas con recaudo casero (1/2 tza = 99g), garbanzos cocidos salteados con pimentón (1/2 tza = 82g), habas tiernas cocidas (1/2 tza = 85g), alubias cocidas (1/2 tza = 90g), soya texturizada cocida (1/3 tza = 50g).
+- AOA Muy bajo aporte de grasa: Pechuga de pollo deshebrada o a la plancha sin piel (30g cocido), filete de pescado blanco (tilapia, merluza, lenguado, robalo) (40g cocido), atún en agua drenado bajo en sodio (1/3 lata = 40g), claras de huevo cocidas (2 piezas = 66g), camarón cocido al vapor (5 pzas medianas = 35g), salmón fresco cocido (30g), pulpo o calamar cocido (35g).
+- AOA Bajo aporte de grasa: Queso panela fresco en cubos (40g), requesón artesanal descremado (3 cdas = 45g), bistec de res magro a la plancha (30g cocido), lomo de cerdo magro asado (30g cocido), jamón de pechuga de pavo bajo en sodio (2 rebanadas = 42g), falda de res magra deshebrada (30g cocido).
+- AOA Moderado aporte de grasa: Huevo entero cocido o revuelto (1 pza = 50g), queso Oaxaca artesanal deshebrado (30g), queso fresco de rancho o canasto en cubos (35g), queso cotija molido (20g), sardina en salsa de jitomate (30g), salchicha de pavo cocida (1 pza = 45g).
+- AOA Alto aporte de grasa: Queso manchego artesanal (25g), queso gouda en láminas (25g), queso amarillo (1 rebanada = 25g).
+- Leches: Leche descremada (1 tza = 240ml), yogur natural descremado sin azúcar (3/4 tza = 150g), kéfir natural descremado (3/4 tza = 180ml), yogur griego descremado natural (4 cdas = 100g), leche semidescremada (1 tza = 240ml), leche entera (1 tza = 240ml).
+- Aceites con proteína (Oleaginosas y semillas - 70 kcal, 3g Prot, 5g Líp): Almendras enteras o fileteadas (10 pzas = 12g), nuez pecana en mitades/trozos (3 pzas = 12g), cacahuates tostados sin sal (14 pzas = 14g), pepitas de calabaza tostadas (2 cditas = 10g), semillas de chía o linaza molida (2 cditas = 10g), ajonjolí tostado (1.5 cdas = 11g), pistaches sin cáscara (18 pzas = 15g), crema de cacahuate o almendra 100% natural sin azúcar (2 cditas = 10g).
+  ¡PROHIBIDO poner en este grupo aceites líquidos o aguacate! Deben usarse como TOPPING crujiente para coronar avena, fruta, ensaladas o yogur; NUNCA para cocinar o freír.
+- Aceites sin proteína (Grasas puras - 45 kcal, 0g Prot, 5g Líp): Aceite de oliva extra virgen (1 cdita = 5ml), aceite vegetal para cocinar (1 cdita = 5ml), aguacate Hass en rebanadas cremosas (1/3 pza = 45g), aceitunas verdes o negras (6 pzas = 30g), crema de vaca fresca (1 cda = 15g), mayonesa reducida en grasa (1 cda = 15g), mantequilla pura (1.5 cditas = 8g).
+  ¡PROHIBIDO poner aquí nueces o semillas! Si se usa para cocinar, nombrarlo como "(para cocinar / en la preparación)".
+- Azúcares sin grasa (40 kcal, 0g Prot, 0g Líp, 10g HCO): Miel de abeja pura mexicana (2 cditas = 10g), mermelada de fruta casera (2.5 cditas = 15g), azúcar mascabado o morena (2 cditas = 10g), gelatina baja en azúcar (1/3 tza = 80g). ¡PROHIBIDO poner aquí chocolates, helado o pasteles!
+- Azúcares con grasa (85 kcal, 0g Prot, 5g Líp, 10g HCO): Chocolate amargo 70-85% cacao (1 cuadrito = 15g), nutella o crema de avellana con cacao (2 cditas = 10g), mazapán tradicional de cacahuate (1/3 pza = 10g), nieve o helado de crema (1/3 tza = 50g), pastelito casero o galletas con relleno (1 pieza chica).
+- Embutidos y carnes procesadas (Jamón de pavo, jamón de pierna, salchicha, etc.): Son ALIMENTOS DE ORIGEN ANIMAL (AOA bajo/moderado aporte de grasa). ¡TERMINANTEMENTE PROHIBIDO considerarlos libre/sazón o verdura!
+
+REGLA ESTRICTA DE EXCLUSIÓN TOTAL: EVITAR TOTALMENTE LAS SEMILLAS DE GIRASOL (PIPAS):
+- Queda TERMINANTEMENTE PROHIBIDO incluir semillas de girasol, pipas de girasol o cualquier ingrediente derivado de semillas de girasol en ningún menú, ingrediente o preparación.
+- Para el grupo de aceites con proteína (oleaginosas), utiliza exclusivamente almendras, nueces, cacahuates, pepitas de calabaza, chía, ajonjolí o pistaches. NUNCA semillas de girasol.
+
+REGLA ESTRICTA: EVITAR AL MÁXIMO EL USO DE AJO Y PILONCILLO:
+- A menos que el paciente lo pida explícitamente en sus alimentos favoritos, NO utilices ajo, dientes de ajo ni piloncillo en ningún menú, ingrediente o preparación.
+- Para sazonar de forma libre y natural utiliza hierbas aromáticas mexicanas frescas (cilantro, epazote, orégano, perejil, laurel, tomillo, comino, pimienta negra o jugo de limón fresco).
+- Para endulzar utiliza miel de abeja pura, mermelada de fruta sin azúcar, fruta madura o extracto de vainilla. NUNCA piloncillo.
+
+CONGRUENCIA CULINARIA ESTRICTA POR TIEMPO DE COMIDA:
+- Desayuno: Alimentos matutinos típicos mexicanos (huevos revueltos o estrellados, claras con vegetales, queso panela asado, requesón, frijoles refritos o de la olla, tortillas de maíz, pan tostado, avena cocida con canela, fruta fresca picada como papaya, melón, manzana o fresas, café con leche o yogur). Evitar cortes pesados de carne o pescado en el desayuno.
+- Colación Matutina (Colación 1): Refrigerio fresco, ligero y energizante (frutas frescas como manzana, fresas, moras, kiwi, mandarina; yogur griego, queso cottage, requesón con canela; frutos secos y semillas como almendras o nueces; bastones de jícama o pepino con limón). NUNCA guisados calientes ni carnes pesadas en colaciones.
+- Comida (Almuerzo principal): Platillo fuerte tradicional mexicano caliente y sustancioso (pechuga de pollo en guisado o a la plancha, filete de pescado al cilantro o empapelado, bistec de res magro, falda deshebrada, lomo de cerdo, sopa de lentejas o frijoles de la olla, arroz al vapor, papas cocidas, ensalada fresca, nopales, calabacitas).
+- Colación Vespertina (Colación 2): Snack saciante para evitar hambre nocturna (frutas frescas con semillas, pepino y jícama con limón y chile piquín, tostadas horneadas con requesón, yogur bebible natural).
+- Cena: Preparación ligera, reconfortante y de fácil digestión (queso panela al comal, sincronizadas ligeras de maíz con espinacas, tostadas horneadas con atún preparado o salpicón ligero de pollo, claras con champiñones, pan integral con requesón y aguacate). Evitar carnes rojas pesadas o frituras.
+
+ROTACIÓN Y DIVERSIDAD OBLIGATORIA ENTRE LAS 3 OPCIONES:
+- Opción A: Tradicional casera nutritiva al comal o en guisado ligero mexicano.
+- Opción B: Opción fresca, ensalada, bowl saludable o preparación práctica de rápida elaboración.
+- Opción C: Opción creativa, sandwich gourmet saludable, tostadas horneadas o combinación innovadora con técnica culinaria diferenciada.
+- NUNCA repitas el mismo ingrediente proteico principal (ej. pollo en A y pollo en B está TERMINANTEMENTE PROHIBIDO).
+- Rota cereales y verduras entre las 3 opciones para dar al paciente una experiencia gastronómica rica y estimulante.
+- Si se prescriben 2 o más equivalentes de Aceite sin Proteína: usa 1 eq para la cocción (aceite) y el resto como ingrediente de mesa delicioso (aguacate Hass, crema fresca o aceitunas). Nunca añadas aceite crudo a platillos donde no armoniza.
+- Multiplica la porción por el número de equivalentes asignados con exactitud de SMAE 5ta edición.`;
 
     let preferencesText = '';
     if (req.body.previousOptionHistory) {
-      // Extract titles to avoid passing huge objects
       const historySummary: Record<string, string[]> = {};
       Object.entries(req.body.previousOptionHistory).forEach(([meal, options]: [string, any]) => {
         historySummary[meal] = [];
@@ -376,11 +363,90 @@ REGLAS CRÍTICAS DE CALIDAD, VARIEDAD Y NO REPETICIÓN (MÁXIMA PRIORIDAD):
       preferencesText += `\n\nLISTA DE EXCLUSIONES (MENÚS MOSTRADOS ANTERIORMENTE - ESTRICTAMENTE PROHIBIDO REPETIR):\n${JSON.stringify(historySummary, null, 2)}`;
     }
 
+    // Directiva de suplementación de proteína de suero de leche (Whey Protein)
+    const timingMap: Record<string, string> = {
+      desayuno: 'Desayuno',
+      colacion1: 'Colación 1',
+      comida: 'Comida',
+      colacion2: 'Colación 2',
+      cena: 'Cena',
+      any: 'Colación 2',
+    };
+    const proteinTiming = proteinSupplement?.timing || 'colacion2';
+    const targetProteinMeal = timingMap[proteinTiming] || 'Colación 2';
+
+    let proteinPromptText = '';
+    if (proteinSupplement?.enabled && proteinSupplement?.includeInMenu) {
+      const scoops = proteinSupplement.scoops || 1;
+      const brand = proteinSupplement.brandOrType || 'Proteína de suero de leche (Whey Protein)';
+      const pGrams = proteinSupplement.totalProteinGrams || (scoops * (proteinSupplement.proteinGramsPerServing || 25));
+      const eqCount = Number((pGrams / 7).toFixed(1));
+
+      proteinPromptText = `\n\n═════════════════════════════════════════════════════════════════════════
+🥛 SUPLEMENTO DE PROTEÍNA DE SUERO DE LECHE (WHEY PROTEIN) - CONTABILIZACIÓN E INTEGRACIÓN OBLIGATORIA:
+El paciente tiene prescrito suero de leche que DEBES contabilizar e incorporar obligatoriamente en el menú generado:
+• Producto: ${brand}
+• Cantidad / Dosis: ${scoops} medida(s) (scoop) (${pGrams}g de proteína neta pura, ~${pGrams * 4} kcal)
+• Equivalencia clínica SMAE: ${eqCount} equivalentes de Alimento de origen animal muy bajo aporte de grasa
+• Tiempo de comida asignado para tomarla: ${targetProteinMeal}
+
+INSTRUCCIÓN OBLIGATORIA PARA ${targetProteinMeal.toUpperCase()}:
+En las 3 opciones (Opción A, Opción B y Opción C) del tiempo de comida "${targetProteinMeal}", DEBES incluir este suplemento en la lista de ingredientes:
+  - foodName: "${brand}"
+  - exactPortion: "${scoops} ${scoops === 1 ? 'medida (scoop)' : 'medidas (scoops)'} (${Math.round(scoops * 30)}g polvo con ${pGrams}g proteína)"
+  - smaeGroup: "Alimento de origen animal muy bajo aporte de grasa"
+  - equivalentsCount: ${eqCount}
+En la preparación culinaria de las opciones de ${targetProteinMeal}, explica detalladamente cómo incorporarlo (ej. batido en shaker con agua fresca o leche descremada, licuado cremoso post-entreno con la fruta del tiempo, o mezclado suavemente en un bowl de avena cocida).
+═════════════════════════════════════════════════════════════════════════`;
+    }
+
+    // Directiva de aporte manual de nutrientes si está seleccionado para incluirse en el menú
+    let manualNutrientPromptText = '';
+    if (manualNutrientEntry?.enabled && manualNutrientEntry?.includeInMenu) {
+      const pGrams = Number(manualNutrientEntry.proteinGrams) || 0;
+      const directKcal = Number(manualNutrientEntry.kcal) || 0;
+      const lGrams = Number(manualNutrientEntry.lipidsGrams) || 0;
+      const cGrams = Number(manualNutrientEntry.carbsGrams) || 0;
+      const totalKcal = directKcal > 0 ? directKcal : (pGrams * 4 + lGrams * 9 + cGrams * 4);
+      const name = manualNutrientEntry.name?.trim() || (pGrams > 0 ? 'Aporte manual / Suplemento de proteína' : 'Aporte nutricional manual');
+      const targetMeal = timingMap[manualNutrientEntry.timing || 'colacion2'] || 'Colación 2';
+      const eqCount = pGrams > 0 ? Number((pGrams / 7).toFixed(1)) : 1;
+
+      manualNutrientPromptText = `\n\n═════════════════════════════════════════════════════════════════════════
+📊 APORTE MANUAL DE NUTRIENTES - CONTABILIZACIÓN E INTEGRACIÓN EN EL MENÚ:
+El usuario ingresó un aporte manual que DEBES contabilizar e incorporar en el menú:
+• Identificador: ${name}
+• Aporte neto: ${pGrams}g Proteína, ${totalKcal} kcal, ${lGrams}g Lípidos/Grasas, ${cGrams}g Carbohidratos
+• Tiempo de comida asignado: ${targetMeal}
+
+INSTRUCCIÓN OBLIGATORIA PARA ${targetMeal.toUpperCase()}:
+En las 3 opciones (A, B y C) de "${targetMeal}", añade este aporte en la lista de ingredientes:
+  - foodName: "${name}"
+  - exactPortion: "${pGrams > 0 ? `${pGrams}g proteína, ` : ''}${totalKcal} kcal (${lGrams}g grasa, ${cGrams}g HC)"
+  - smaeGroup: "${pGrams > 0 ? 'Alimento de origen animal muy bajo aporte de grasa' : 'Otros'}"
+  - equivalentsCount: ${eqCount}
+═════════════════════════════════════════════════════════════════════════`;
+    }
+
+    // Énfasis de máxima prioridad en alimentos preferidos y alimentos a evitar
+    let strictEmphasisText = '';
+    if (dislikedFoods || preferredFoods) {
+      strictEmphasisText = `\n\n═════════════════════════════════════════════════════════════════════════
+🚨 ÉNFASIS CLÍNICO ESTRICTO - PREFERENCIAS Y ALIMENTOS A EVITAR:
+1. ALIMENTOS A EVITAR / ALERGIAS (CERO TOLERANCIA / EXCLUSIÓN TOTAL AL 100%):
+   ${dislikedFoods ? `ESTRICTAMENTE PROHIBIDO incluir: "${dislikedFoods}".
+   BAJO NINGUNA CIRCUNSTANCIA incluyas estos alimentos, ingredientes derivados, salsas o guarniciones con ellos en ninguna opción A, B o C. La seguridad y apego del paciente exigen exclusión 100% estricta e inviolable.` : 'No se indicaron alimentos a evitar.'}
+
+2. ALIMENTOS PREFERIDOS DEL PACIENTE (MÁXIMA PRIORIDAD Y PROTAGONISMO):
+   ${preferredFoods ? `ALTA PRIORIDAD: Integra de forma protagónica, deliciosa y apetecible los alimentos favoritos del paciente ("${preferredFoods}") en las recetas generadas.` : 'Variedad gastronómica estándar SMAE.'}
+═════════════════════════════════════════════════════════════════════════`;
+    }
+
     if (preferredFoods) {
-      preferencesText += `\nALIMENTOS PREFERIDOS / FAVORITOS DEL PACIENTE (INCLUIR CON PRIORIDAD): ${preferredFoods}`;
+      preferencesText += `\nALIMENTOS PREFERIDOS / FAVORITOS DEL PACIENTE: ${preferredFoods}`;
     }
     if (dislikedFoods) {
-      preferencesText += `\nALIMENTOS NO PREFERIDOS / AVERSIONES DEL PACIENTE (ESTRICTAMENTE PROHIBIDO INCLUIR): ${dislikedFoods}`;
+      preferencesText += `\nALIMENTOS NO PREFERIDOS / AVERSIONES DEL PACIENTE: ${dislikedFoods}`;
     }
 
     if (mealPreferences) {
@@ -395,13 +461,16 @@ REGLAS CRÍTICAS DE CALIDAD, VARIEDAD Y NO REPETICIÓN (MÁXIMA PRIORIDAD):
     const prompt = `Calcula y genera las 3 opciones de menú (Opción A, Opción B y Opción C) para los siguientes tiempos de comida con sus porciones exactas del SMAE 5ta edición:
 
 DATOS DEL PACIENTE: ${patientName ? patientName : 'Paciente General'}
-NOTAS / INDICACIONES CLÍNICAS: ${dietNotes ? dietNotes : 'Menús mexicanos balanceados, deliciosos, fáciles de preparar y económicos.'}
+NOTAS / INDICACIONES CLÍNICAS: ${dietNotes ? dietNotes : 'Menús variados, deliciosos, fáciles de preparar, sin repeticiones y estrictamente congruentes entre título y equivalentes.'}
 ${preferencesText}
+${strictEmphasisText}
+${proteinPromptText}
+${manualNutrientPromptText}
 
 TABLA DE EQUIVALENTES SMAE:
 ${JSON.stringify(tableData, null, 2)}
 
-Por favor genera las 3 OPCIONES COMPLETAS (Opción A, Opción B y Opción C) para cada uno de los 5 tiempos de comida (Desayuno, Colación 1, Comida, Colación 2, Cena) respetando estrictamente la no repetición de recetas, la integración de comidas preferidas y la exclusión de comidas no preferidas.`;
+Por favor genera las 3 OPCIONES COMPLETAS (Opción A, Opción B y Opción C) para cada uno de los tiempos de comida que tengan equivalentes asignados, garantizando máxima variedad gastronómica del SMAE 5ta edición, congruencia total entre títulos e ingredientes, respeto absoluto a las preferencias/exclusiones y contabilización del suplemento o aporte manual si fue indicado.`;
 
     let data = await generateWithTimeout(
       () =>
@@ -409,13 +478,21 @@ Por favor genera las 3 OPCIONES COMPLETAS (Opción A, Opción B y Opción C) par
           contents: prompt,
           systemInstruction,
           responseSchema: fullMenuResponseSchema,
-          temperature: 0.5,
+          temperature: 0.4,
         }),
-      45000
+      16000
     );
 
     // Rectify generated data rigorously according to SMAE 5th Edition
-    data = rectifyFullPlan(data, tableData, req.body.dislikedFoods);
+    data = rectifyFullPlan(
+      data,
+      tableData,
+      req.body.dislikedFoods,
+      req.body.preferredFoods,
+      req.body.mealPreferences,
+      proteinSupplement,
+      manualNutrientEntry
+    );
 
     // If client requested to preserve specific options for printing, merge them back
     if (req.body.preservedMeals && data.meals) {
@@ -439,11 +516,22 @@ Por favor genera las 3 OPCIONES COMPLETAS (Opción A, Opción B y Opción C) par
       req.body.tableData,
       req.body.dietNotes,
       req.body.preferredFoods,
-      req.body.dislikedFoods
+      req.body.dislikedFoods,
+      req.body.mealPreferences,
+      req.body.proteinSupplement,
+      req.body.manualNutrientEntry
     );
 
     // Rectify fallback data rigorously according to SMAE 5th Edition
-    fallbackData = rectifyFullPlan(fallbackData, req.body.tableData, req.body.dislikedFoods);
+    fallbackData = rectifyFullPlan(
+      fallbackData,
+      req.body.tableData,
+      req.body.dislikedFoods,
+      req.body.preferredFoods,
+      req.body.mealPreferences,
+      req.body.proteinSupplement,
+      req.body.manualNutrientEntry
+    );
 
     if (req.body.preservedMeals && fallbackData.meals) {
       const preserved = req.body.preservedMeals;
@@ -463,7 +551,7 @@ Por favor genera las 3 OPCIONES COMPLETAS (Opción A, Opción B y Opción C) par
   }
 });
 
-// API Endpoint to regenerate a single meal (with option to maintain selected options for printing)
+// API Endpoint to regenerate a single meal (3 options A, B, C)
 app.post('/api/regenerate-meal', async (req, res) => {
   try {
     const {
@@ -477,6 +565,8 @@ app.post('/api/regenerate-meal', async (req, res) => {
       existingMenuTitles,
       keptOptions,
       keepLetters,
+      proteinSupplement,
+      manualNutrientEntry,
     } = req.body;
 
     if (!mealName || !portions) {
@@ -488,26 +578,81 @@ app.post('/api/regenerate-meal', async (req, res) => {
       keptInstruction = `\nNOTA ESPECIAL: El paciente ya seleccionó para imprimir la(s) Opción(es) ${keepLetters.join(', ')}. Genera opciones totalmente novedosas, variadas y diferentes para las opciones restantes sin duplicar alimentos ni recetas.`;
     }
 
+    // Directiva de suplemento si aplica a este tiempo de comida
+    const mealKeyMap: Record<string, string> = {
+      desayuno: 'desayuno',
+      'colación 1': 'colacion1',
+      'colacion 1': 'colacion1',
+      colacion1: 'colacion1',
+      comida: 'comida',
+      'colación 2': 'colacion2',
+      'colacion 2': 'colacion2',
+      colacion2: 'colacion2',
+      cena: 'cena',
+    };
+    const curKey = mealKeyMap[mealName.toLowerCase()] || mealName.toLowerCase();
+    const timing = proteinSupplement?.timing || 'colacion2';
+    const isTargetProteinMeal = proteinSupplement?.enabled && proteinSupplement?.includeInMenu && (timing === 'any' ? curKey === 'colacion2' : curKey === timing);
+
+    let mealProteinPrompt = '';
+    if (isTargetProteinMeal) {
+      const scoops = proteinSupplement.scoops || 1;
+      const brand = proteinSupplement.brandOrType || 'Proteína de suero de leche (Whey Protein)';
+      const pGrams = proteinSupplement.totalProteinGrams || (scoops * (proteinSupplement.proteinGramsPerServing || 25));
+      const eqCount = Number((pGrams / 7).toFixed(1));
+      mealProteinPrompt = `\n\n🥛 INTEGRACIÓN OBLIGATORIA DEL SUPLEMENTO (${brand}):
+En las opciones generadas para ${mealName}, DEBES incluir como ingrediente:
+- ${brand}: ${scoops} medida (${Math.round(scoops * 30)}g polvo con ${pGrams}g proteína, eq: ${eqCount} de AOA MBAG).
+En la preparación explica cómo disolverla o licuarla adecuadamente.`;
+    }
+
+    const manualTiming = manualNutrientEntry?.timing || 'colacion2';
+    const isTargetManualMeal = manualNutrientEntry?.enabled && manualNutrientEntry?.includeInMenu && (manualTiming === 'any' ? curKey === 'colacion2' : curKey === manualTiming);
+
+    let mealManualPrompt = '';
+    if (isTargetManualMeal) {
+      const pGrams = Number(manualNutrientEntry.proteinGrams) || 0;
+      const directKcal = Number(manualNutrientEntry.kcal) || 0;
+      const lGrams = Number(manualNutrientEntry.lipidsGrams) || 0;
+      const cGrams = Number(manualNutrientEntry.carbsGrams) || 0;
+      const totalKcal = directKcal > 0 ? directKcal : (pGrams * 4 + lGrams * 9 + cGrams * 4);
+      const name = manualNutrientEntry.name?.trim() || (pGrams > 0 ? 'Aporte manual / Suplemento de proteína' : 'Aporte nutricional manual');
+      const eqCount = pGrams > 0 ? Number((pGrams / 7).toFixed(1)) : 1;
+
+      mealManualPrompt = `\n\n📊 APORTE MANUAL DE NUTRIENTES - INTEGRACIÓN OBLIGATORIA (${name}):
+En las opciones generadas para ${mealName}, DEBES incluir como ingrediente:
+- ${name}: ${pGrams > 0 ? `${pGrams}g proteína, ` : ''}${totalKcal} kcal (${lGrams}g grasa, ${cGrams}g HC, eq: ${eqCount}).
+En la preparación culinaria explica cómo incorporarlo adecuadamente al menú.`;
+    }
+
     const systemInstruction = `Eres un nutriólogo experto mexicano de alta especialidad en el Sistema Mexicano de Alimentos Equivalentes (SMAE 5ta Edición).
-Genera 3 OPCIONES TOTALMENTE NUEVAS, CREATIVAS Y VARIADAS (Opción A, Opción B y Opción C) para el tiempo de comida "${mealName}" cumpliendo estrictamente con las porciones y gramajes de SMAE 5ta edición asignadas.
+Genera 3 OPCIONES TOTALMENTE NUEVAS, CREATIVAS Y VARIADAS (Opción A, Opción B y Opción C) para el tiempo de comida "${mealName}" cumpliendo estrictamente con las porciones y gramajes de SMAE 5ta edición asignados.
 ${keptInstruction}
 
-REGLAS CRÍTICAS:
-1. NO REPETIR RECETAS: Las opciones deben ser completamente diferentes entre sí y distintas a recetas previas (${existingMenuTitles ? existingMenuTitles.join(', ') : 'ninguna'}).
-2. COHERENCIA CULINARIA HUMANA (ARMONÍA Y SENTIDO COMÚN): Trata que los menús tengan una coherencia lógica y armonía culinaria real entre cada grupo de alimento, como si el platillo fuera pensado y cocinado por una persona (un chef o nutriólogo humano). No mezcles ingredientes al azar o que no combinan.
-3. INSPIRACIÓN EN INTERNET Y ADAPTACIÓN ESTRICTA AL SMAE: Busca inspiración en internet de recetas novedosas y sabrosas, pero ajústalas OBLIGATORIAMENTE al número exacto de equivalentes y a los grupos de alimentos del SMAE 5ta Edición indicados.
-4. VERIFICACIÓN MINUCIOSA (DOBLE CHEQUEO): Eres extremadamente minucioso. ANTES de mostrar la respuesta, revisa mentalmente y asegúrate de que cada ingrediente corresponda ESTRICTAMENTE al grupo de alimento solicitado y al equivalente dado. Evita errores graves de clasificación (ej. no clasifiques aguacate en frutas ni la papa en verduras).
-5. PREFERENCIAS: Incorpora los alimentos preferidos del paciente y EXCLUYE COMPLETAMENTE cualquier alimento no preferido o que deba evitarse.
-6. UTILIZA EXCLUSIVAMENTE los alimentos, ingredientes y porciones listados en el SMAE 5ta Edición con sus gramajes exactos.
-7. FORMATO DE FRACCIONES Y MULTIPLICACIÓN MATEMÁTICA: Cuando la porción base de un alimento sea una fracción (ej. 1/2, 1/3, 3/4) y debas multiplicarla por el número de equivalentes, resuelve matemáticamente y muestra el resultado OBLIGATORIAMENTE en número entero o con un solo decimal (ej. en lugar de "3/2 tazas" escribe "1.5 tazas"). NUNCA dejes la fracción sin multiplicar.
-8. REGLA ESTRICTA DE VARIEDAD (MÁXIMO 2 VECES POR TIEMPO DE COMIDA): En este tiempo de comida, NINGÚN ingrediente o alimento base puede repetirse más de dos veces entre Opción A, B y C. Si un alimento ya está en A y B, en C debe usarse otro alimento del mismo grupo del SMAE.
-9. MANEJO DE GRASAS SIN PROTEÍNA ("Aceite sin Proteína"): Si se asignan 2 o más equivalentes a este tiempo de comida, OBLIGATORIAMENTE DEBES usar UN equivalente para la preparación/cocción (ej. Aceite) y el RESTO como un ingrediente diferente y coherente (ej. Crema de vaca, Aguacate, Mayonesa). NUNCA eches aceite crudo como aderezo incongruente (ej. en un sándwich usar crema o mayonesa, no aceite).
-10. USO DE NUEVOS ALIMENTOS (MAZAPÁN, GRANOLA, CEREALES DE CAJA, PANES, PIZZA, PURÉS Y ALMÍBARES): De acuerdo al SMAE y fuentes añadidas:
-   - "Azúcares con grasa": PUEDES incluir "Mazapán" o "Mazapán de cacahuate" (1/3 pieza = 1 eq) como postre o snack.
-   - "Cereales sin grasa": PUEDES incluir cereales comerciales ("Zucaritas", "Choco Krispis", "Froot Loops" 1/3 taza = 1 eq, o "Corn Flakes" 1/2 taza = 1 eq); o "Pan para hamburguesa" (1/2 pieza = 1 eq) y "Pan para hot dog" (1/2 pieza = 1 eq) para platillos de comida rápida saludable.
-   - "Cereales con grasa": PUEDES incluir "Granola natural o con miel" o "Granola baja en grasa" (3 cucharadas = 1 eq), "Puré de papa preparado" (1/2 taza = 1 eq), o "Pizza de queso o tradicional" (2/3 de rebanada = 1 eq).
-   - "Frutas": PUEDES incluir "Durazno en almíbar" (2 mitades = 1 eq), "Piña en almíbar" (1 rebanada = 1 eq), "Cóctel de frutas en almíbar" (1/4 taza = 1 eq) o "Puré de manzana" (1/2 taza = 1 eq).
-11. EXCLUSIÓN ESTRICTA DE POZOLE: NUNCA sugieras ni incluyas "Pozole" ni "Maíz pozolero / Cacahuazintle" en las opciones generadas automáticamente por IA. Este alimento queda EXCLUSIVAMENTE reservado para adición manual en el buscador por parte del usuario o nutriólogo, o únicamente si el usuario lo solicita explícitamente en sus notas.`;
+REGLAS DE ORO:
+1. CONGRUENCIA ENTRE TÍTULO E INGREDIENTES: El título debe reflejar con total exactitud los alimentos principales del platillo. No llames "Omelette" si no tiene huevo; no llames "Pechuga" si no tiene pollo; no llames "Sándwich" si no tiene pan; no llames "Quesadilla" si no tiene queso y tortilla.
+2. ROTACIÓN Y VARIEDAD SMAE:
+   - Opción A: Tradicional casera nutritiva al comal o en salsa ligera.
+   - Opción B: Opción fresca, ensalada, bowl o preparación práctica.
+   - Opción C: Opción creativa, sándwich gourmet saludable o tostadas horneadas.
+   - Cada opción debe tener un ingrediente proteico y técnica culinaria diferente.
+3. DISTINCIÓN EXACTA DE GRUPOS SMAE:
+   - "Aceites con proteína": Oleaginosas y semillas (Almendras, nuez, cacahuates, pepitas, chía, ajonjolí, pistaches, crema de cacahuate sin azúcar). NUNCA aceites líquidos ni aguacate. Deben usarse como TOPPING crujiente para coronar avena, fruta, ensaladas o yogur; NUNCA para cocinar o freír.
+   - "Aceite sin Proteína": Aceite de oliva, vegetal, aguacate Hass, aceitunas, crema, mayonesa, mantequilla. NUNCA nueces ni semillas. Si es para cocinar, nombrarlo como "(para cocinar / en la preparación)".
+   - "Azúcares sin grasa": Miel de abeja pura, mermelada, azúcar mascabado, gelatina. NUNCA chocolates, nieve de crema ni pastel.
+   - "Azúcares con grasa": Chocolate amargo, con leche, nutella, pastelito, helado de crema, mazapán.
+   - "Jamón y derivados cárnicos": Son AOA (Alimento de Origen Animal), NUNCA sazón ni libre ni verdura.
+   - "Cereales con grasa": Granola, galleta de avena casera, puré de papa con mantequilla, pan dulce.
+   - "Cereales sin grasa": Tortilla de maíz, arroz al vapor, papa cocida o al vapor con piel, avena en hojuelas, pan integral, tostadas horneadas.
+4. REGLA ESTRICTA DE EXCLUSIÓN TOTAL: EVITAR TOTALMENTE LAS SEMILLAS DE GIRASOL (PIPAS):
+   - Queda TERMINANTEMENTE PROHIBIDO incluir semillas de girasol ni pipas. Utiliza almendras, nueces, cacahuates, pepitas de calabaza, chía, ajonjolí o pistaches.
+5. REGLA ESTRICTA: EVITAR AL MÁXIMO EL USO DE AJO Y PILONCILLO:
+   - A menos que el paciente lo pida explícitamente en sus alimentos favoritos, NO utilices ajo, dientes de ajo ni piloncillo en ningún menú, ingrediente o preparación.
+   - Para sazonar utiliza hierbas aromáticas mexicanas frescas (cilantro, epazote, orégano, perejil, laurel, tomillo, comino, pimienta o jugo de limón).
+   - Para endulzar utiliza miel de abeja pura, mermelada sin azúcar, fruta natural madura o extracto de vainilla. NUNCA piloncillo.
+6. CONGRUENCIA CULINARIA POR TIEMPO DE COMIDA (${mealName}):
+   - Asegura total armonía de ingredientes y preparaciones según el tiempo de comida (ej. desayunos matutinos tradicionales con huevo/panela/avena; colaciones frescas con fruta/yogur/oleaginosas/bastones de verdura con limón; comidas con guisados calientes, arroz, leguminosas y ensaladas; cenas ligeras y digestivas al comal).
+7. COHERENCIA CULINARIA Y EN SUS INGREDIENTES: Platillos armónicos, apetecibles y saludables de la cocina cotidiana mexicana donde los ingredientes se combinan con sentido gastronómico real y los títulos reflejan exactamente los ingredientes.`;
 
     let specificPrefsText = '';
     if (preferredFoods) specificPrefsText += `\nAlimentos preferidos generales: ${preferredFoods}`;
@@ -520,7 +665,7 @@ REGLAS CRÍTICAS:
 Equivalentes asignados:
 ${JSON.stringify(portions, null, 2)}
 
-Notas: ${dietNotes || 'Alta variedad gastronómica, platillo creativo mexicano, saludable y apetecible.'}${specificPrefsText}`;
+Notas: ${dietNotes || 'Alta variedad gastronómica, platillo creativo mexicano, saludable y apetecible.'}${specificPrefsText}${mealProteinPrompt}${mealManualPrompt}`;
 
     let data = await generateWithTimeout(
       () =>
@@ -534,14 +679,14 @@ Notas: ${dietNotes || 'Alta variedad gastronómica, platillo creativo mexicano, 
     );
 
     // Rectify generated meal against SMAE 5th Edition standards
-    data = rectifyMealMenu(data, portions, dislikedFoods);
+    data = rectifyMealMenu(data, portions, dislikedFoods, preferredFoods, proteinSupplement, manualNutrientEntry);
 
     // Merge back any kept options selected for printing
     if (keptOptions && Array.isArray(keepLetters)) {
       if (keepLetters.includes('A') && keptOptions.optionA) data.optionA = keptOptions.optionA;
       if (keepLetters.includes('B') && keptOptions.optionB) data.optionB = keptOptions.optionB;
       if (keepLetters.includes('C') && keptOptions.optionC) data.optionC = keptOptions.optionC;
-      data = ensureMealVariety(data, dislikedFoods);
+      data = ensureMealVariety(data, dislikedFoods, preferredFoods);
     }
 
     return res.json(data);
@@ -551,23 +696,34 @@ Notas: ${dietNotes || 'Alta variedad gastronómica, platillo creativo mexicano, 
       req.body.mealName,
       req.body.portions,
       req.body.preferredFoods,
-      req.body.dislikedFoods
+      req.body.dislikedFoods,
+      0,
+      undefined,
+      req.body.proteinSupplement,
+      req.body.manualNutrientEntry
     );
 
-    fallbackMeal = rectifyMealMenu(fallbackMeal, req.body.portions, req.body.dislikedFoods);
+    fallbackMeal = rectifyMealMenu(
+      fallbackMeal,
+      req.body.portions,
+      req.body.dislikedFoods,
+      req.body.preferredFoods,
+      req.body.proteinSupplement,
+      req.body.manualNutrientEntry
+    );
 
     if (req.body.keptOptions && Array.isArray(req.body.keepLetters)) {
       if (req.body.keepLetters.includes('A') && req.body.keptOptions.optionA) fallbackMeal.optionA = req.body.keptOptions.optionA;
       if (req.body.keepLetters.includes('B') && req.body.keptOptions.optionB) fallbackMeal.optionB = req.body.keptOptions.optionB;
       if (req.body.keepLetters.includes('C') && req.body.keptOptions.optionC) fallbackMeal.optionC = req.body.keptOptions.optionC;
-      fallbackMeal = ensureMealVariety(fallbackMeal, req.body.dislikedFoods);
+      fallbackMeal = ensureMealVariety(fallbackMeal, req.body.dislikedFoods, req.body.preferredFoods);
     }
 
     return res.json(fallbackMeal);
   }
 });
 
-// API Endpoint to regenerate a single specific option (e.g. Option A, B or C)
+// API Endpoint to regenerate a single specific option (Opción A, B o C)
 app.post('/api/regenerate-option', async (req, res) => {
   try {
     const {
@@ -580,32 +736,86 @@ app.post('/api/regenerate-option', async (req, res) => {
       dislikedFoods,
       specificPreferences,
       existingMenuTitles,
+      proteinSupplement,
+      manualNutrientEntry,
     } = req.body;
 
     if (!mealName || !portions || !optionLetter) {
       return res.status(400).json({ error: 'mealName, portions y optionLetter son requeridos' });
     }
 
+    const mealKeyMap: Record<string, string> = {
+      desayuno: 'desayuno',
+      'colación 1': 'colacion1',
+      'colacion 1': 'colacion1',
+      colacion1: 'colacion1',
+      comida: 'comida',
+      'colación 2': 'colacion2',
+      'colacion 2': 'colacion2',
+      colacion2: 'colacion2',
+      cena: 'cena',
+    };
+    const curKey = mealKeyMap[mealName.toLowerCase()] || mealName.toLowerCase();
+
+    const timing = proteinSupplement?.timing || 'colacion2';
+    const isTargetProteinMeal = proteinSupplement?.enabled && proteinSupplement?.includeInMenu && (timing === 'any' ? curKey === 'colacion2' : curKey === timing);
+
+    let mealProteinPrompt = '';
+    if (isTargetProteinMeal) {
+      const scoops = proteinSupplement.scoops || 1;
+      const brand = proteinSupplement.brandOrType || 'Proteína de suero de leche (Whey Protein)';
+      const pGrams = proteinSupplement.totalProteinGrams || (scoops * (proteinSupplement.proteinGramsPerServing || 25));
+      const eqCount = Number((pGrams / 7).toFixed(1));
+      mealProteinPrompt = `\n\n🥛 INTEGRACIÓN OBLIGATORIA DEL SUPLEMENTO (${brand}):
+En la Opción ${optionLetter} de ${mealName}, DEBES incluir como ingrediente:
+- ${brand}: ${scoops} medida (${Math.round(scoops * 30)}g polvo con ${pGrams}g proteína, eq: ${eqCount} de AOA MBAG).
+En la preparación explica cómo disolverla o incorporarla.`;
+    }
+
+    const manualTiming = manualNutrientEntry?.timing || 'colacion2';
+    const isTargetManualMeal = manualNutrientEntry?.enabled && manualNutrientEntry?.includeInMenu && (manualTiming === 'any' ? curKey === 'colacion2' : curKey === manualTiming);
+
+    let mealManualPrompt = '';
+    if (isTargetManualMeal) {
+      const pGrams = Number(manualNutrientEntry.proteinGrams) || 0;
+      const directKcal = Number(manualNutrientEntry.kcal) || 0;
+      const lGrams = Number(manualNutrientEntry.lipidsGrams) || 0;
+      const cGrams = Number(manualNutrientEntry.carbsGrams) || 0;
+      const totalKcal = directKcal > 0 ? directKcal : (pGrams * 4 + lGrams * 9 + cGrams * 4);
+      const name = manualNutrientEntry.name?.trim() || (pGrams > 0 ? 'Aporte manual / Suplemento de proteína' : 'Aporte nutricional manual');
+      const eqCount = pGrams > 0 ? Number((pGrams / 7).toFixed(1)) : 1;
+
+      mealManualPrompt = `\n\n📊 APORTE MANUAL DE NUTRIENTES - INTEGRACIÓN OBLIGATORIA (${name}):
+En la Opción ${optionLetter} de ${mealName}, DEBES incluir como ingrediente:
+- ${name}: ${pGrams > 0 ? `${pGrams}g proteína, ` : ''}${totalKcal} kcal (${lGrams}g grasa, ${cGrams}g HC, eq: ${eqCount}).
+En la preparación culinaria explica cómo incorporarlo adecuadamente al menú.`;
+    }
+
     const systemInstruction = `Eres un nutriólogo experto mexicano de alta especialidad en el Sistema Mexicano de Alimentos Equivalentes (SMAE 5ta Edición).
 Genera UNA ÚNICA OPCIÓN TOTALMENTE NUEVA, CREATIVA Y DELICIOSA (Opción ${optionLetter}) para el tiempo de comida "${mealName}" cumpliendo exactamente con las porciones y gramajes de SMAE 5ta edición asignados.
 
 REGLAS CRÍTICAS:
-1. NO REPETIR RECETAS: La receta debe ser completamente diferente a las existentes (${existingMenuTitles ? existingMenuTitles.join(', ') : 'ninguna'}).
-2. COHERENCIA CULINARIA HUMANA (ARMONÍA Y SENTIDO COMÚN): Trata que los menús tengan una coherencia lógica y armonía culinaria real entre cada grupo de alimento, como si el platillo fuera pensado y cocinado por una persona (un chef o nutriólogo humano). No mezcles ingredientes al azar o que no combinan.
-3. INSPIRACIÓN EN INTERNET Y ADAPTACIÓN ESTRICTA AL SMAE: Busca inspiración en internet de recetas novedosas y sabrosas, pero ajústalas OBLIGATORIAMENTE al número exacto de equivalentes y a los grupos de alimentos del SMAE 5ta Edición indicados.
-4. VERIFICACIÓN MINUCIOSA (DOBLE CHEQUEO): Eres extremadamente minucioso. ANTES de mostrar la respuesta, revisa mentalmente y asegúrate de que cada ingrediente corresponda ESTRICTAMENTE al grupo de alimento solicitado y al equivalente dado. Evita errores graves de clasificación (ej. no clasifiques aguacate en frutas ni la papa en verduras).
-5. PREFERENCIAS: Incorpora los alimentos preferidos del paciente y EXCLUYE COMPLETAMENTE los alimentos a evitar.
-6. UTILIZA EXCLUSIVAMENTE los alimentos, ingredientes y porciones listados en el SMAE 5ta Edición con sus gramajes exactos.
-7. FORMATO DE FRACCIONES Y MULTIPLICACIÓN MATEMÁTICA: Cuando la porción base de un alimento sea una fracción (ej. 1/2, 1/3, 3/4) y debas multiplicarla por el número de equivalentes, resuelve matemáticamente y muestra el resultado OBLIGATORIAMENTE en número entero o con un solo decimal (ej. en lugar de "3/2 tazas" escribe "1.5 tazas"). NUNCA dejes la fracción sin multiplicar.
-8. COHERENCIA ABSOLUTA ENTRE EL NOMBRE DEL PLATILLO Y SUS INGREDIENTES: El título (title) DEBE reflejar con fidelidad el ingrediente proteico asignado. NUNCA llames a un platillo 'Omelette' si no lleva huevo (si lleva pollo debe llamarse Pechuga de pollo, si lleva res Bistec, etc.).
-9. MÁXIMO 2 REPETICIONES: Ningún ingrediente base puede repetirse más de dos veces en las 3 opciones de este tiempo de comida.
-10. MANEJO DE GRASAS SIN PROTEÍNA ("Aceite sin Proteína"): Si se asignan 2 o más equivalentes a este tiempo de comida, OBLIGATORIAMENTE DEBES usar UN equivalente para la preparación/cocción (ej. Aceite) y el RESTO como un ingrediente diferente y coherente (ej. Crema de vaca, Aguacate, Mayonesa). NUNCA eches aceite crudo como aderezo incongruente (ej. en un sándwich usar crema o mayonesa, no aceite).
-11. USO DE NUEVOS ALIMENTOS (MAZAPÁN, GRANOLA, CEREALES DE CAJA, PANES, PIZZA, PURÉS Y ALMÍBARES): De acuerdo al SMAE y fuentes añadidas:
-   - "Azúcares con grasa": PUEDES incluir "Mazapán" o "Mazapán de cacahuate" (1/3 pieza = 1 eq) como postre o snack.
-   - "Cereales sin grasa": PUEDES incluir cereales comerciales ("Zucaritas", "Choco Krispis", "Froot Loops" 1/3 taza = 1 eq, o "Corn Flakes" 1/2 taza = 1 eq); o "Pan para hamburguesa" (1/2 pieza = 1 eq) y "Pan para hot dog" (1/2 pieza = 1 eq) para platillos de comida rápida saludable.
-   - "Cereales con grasa": PUEDES incluir "Granola natural o con miel" o "Granola baja en grasa" (3 cucharadas = 1 eq), "Puré de papa preparado" (1/2 taza = 1 eq), o "Pizza de queso o tradicional" (2/3 de rebanada = 1 eq).
-   - "Frutas": PUEDES incluir "Durazno en almíbar" (2 mitades = 1 eq), "Piña en almíbar" (1 rebanada = 1 eq), "Cóctel de frutas en almíbar" (1/4 taza = 1 eq) o "Puré de manzana" (1/2 taza = 1 eq).
-12. EXCLUSIÓN ESTRICTA DE POZOLE: NUNCA sugieras ni incluyas "Pozole" ni "Maíz pozolero / Cacahuazintle" en las opciones generadas automáticamente por IA. Este alimento queda EXCLUSIVAMENTE reservado para adición manual en el buscador por parte del usuario o nutriólogo, o únicamente si el usuario lo solicita explícitamente en sus notas.`;
+1. CONGRUENCIA ENTRE TÍTULO E INGREDIENTES: El título debe reflejar los alimentos exactos seleccionados (ej. no llamar omelette si no hay huevo).
+2. SMAE 5TA EDICIÓN: Porciones caseras y gramajes rigurosamente apegados al SMAE 5ta edición.
+3. PREFERENCIAS DEL PACIENTE:
+   - ALIMENTOS PREFERIDOS: Incorpóralos con prioridad absoluta si coinciden con los grupos equivalentes asignados.
+   - ALIMENTOS NO PREFERIDOS / AVERSIONES: TERMINANTEMENTE PROHIBIDO incluir estos ingredientes o derivados.
+   - EXCLUSIÓN TOTAL DE SEMILLAS DE GIRASOL (PIPAS): NUNCA incluir semillas de girasol ni derivados. Usar almendras, nueces, cacahuates, pepitas de calabaza, chía, ajonjolí o pistaches.
+4. DISTINCIÓN OBLIGATORIA:
+   - "Aceites con proteína": Oleaginosas y semillas (Almendras, nueces, cacahuates, pepitas, chía, ajonjolí, pistaches, crema de cacahuate sin azúcar). NUNCA aceites líquidos ni aguacate. Usar como TOPPING crujiente.
+   - "Aceite sin Proteína": Aceite de oliva, vegetal, aguacate, aceitunas, crema fresca, mayonesa, mantequilla. NUNCA nueces ni semillas. Nombrar como "(para cocinar / en la preparación)" si se usa en la cocción.
+   - "Azúcares sin grasa": Miel de abeja pura, mermelada, azúcar mascabado, gelatina. NUNCA chocolates, nieve de crema ni pastel.
+   - "Azúcares con grasa": Chocolate amargo, con leche, nutella, pastelito, helado de crema, mazapán.
+   - "Jamón y derivados cárnicos": Son AOA (Alimento de Origen Animal), NUNCA sazón ni libre ni verdura.
+   - "Cereales con grasa": Granola, galleta de avena casera, puré de papa con mantequilla, pan dulce.
+   - "Cereales sin grasa": Tortilla de maíz, arroz al vapor, papa cocida o al vapor con piel, avena en hojuelas, pan integral, tostadas horneadas.
+5. REGLA ESTRICTA: EVITAR AL MÁXIMO EL USO DE AJO Y PILONCILLO:
+   - A menos que el paciente lo pida explícitamente en sus alimentos favoritos, NO utilices ajo, dientes de ajo ni piloncillo en ningún menú, ingrediente o preparación.
+   - Para sazonar utiliza hierbas aromáticas mexicanas frescas (cilantro, epazote, orégano, perejil, laurel, tomillo, comino, pimienta o jugo de limón).
+   - Para endulzar utiliza miel de abeja pura, mermelada sin azúcar, fruta natural madura o extracto de vainilla. NUNCA piloncillo.
+6. CONGRUENCIA CULINARIA POR TIEMPO DE COMIDA (${mealName}):
+   - Asegura total coherencia con el tiempo de comida (desayuno matutino, colación ligera/fresca, comida tradicional caliente con guisado y guarnición, o cena ligera al comal).
+7. NO REPETIR RECETAS: La receta debe ser completamente diferente a las existentes (${existingMenuTitles ? existingMenuTitles.join(', ') : 'ninguna'}).`;
 
     let specificPrefsText = '';
     if (preferredFoods) specificPrefsText += `\nAlimentos preferidos generales: ${preferredFoods}`;
@@ -618,7 +828,7 @@ REGLAS CRÍTICAS:
 Equivalentes asignados:
 ${JSON.stringify(portions, null, 2)}
 
-Notas: ${dietNotes || 'Menú balanceado, sazón mexicana, fácil de preparar.'}${specificPrefsText}`;
+Notas: ${dietNotes || 'Menú balanceado, sazón mexicana, fácil de preparar y con congruencia absoluta entre título e ingredientes.'}${specificPrefsText}${mealProteinPrompt}${mealManualPrompt}`;
 
     let optionData = await generateWithTimeout(
       () =>
@@ -634,7 +844,59 @@ Notas: ${dietNotes || 'Menú balanceado, sazón mexicana, fácil de preparar.'}$
     // Rectify generated option according to SMAE 5th Edition
     const letter = (optionLetter || 'A').toUpperCase();
     const optIdx = letter === 'B' ? 1 : letter === 'C' ? 2 : 0;
-    optionData = rectifyMenuOption(optionData, portions, optIdx, mealName);
+    optionData = rectifyMenuOption(optionData, portions, optIdx, mealName, preferredFoods, dislikedFoods);
+
+    // Inyectar suplemento o aporte manual si aplica a este tiempo y no está presente
+    if (isTargetProteinMeal && optionData?.ingredients) {
+      const brand = proteinSupplement.brandOrType || 'Proteína de suero de leche (Whey Protein)';
+      const scoops = proteinSupplement.scoops || 1;
+      const pGrams = proteinSupplement.totalProteinGrams || (scoops * (proteinSupplement.proteinGramsPerServing || 25));
+      const eqCount = Number((pGrams / 7).toFixed(1));
+      const hasProtein = optionData.ingredients.some(
+        (ing: any) =>
+          ing.foodName?.toLowerCase().includes('suero') ||
+          ing.foodName?.toLowerCase().includes('whey') ||
+          ing.foodName?.toLowerCase().includes('proteína en polvo') ||
+          ing.foodName?.toLowerCase().includes('proteina en polvo') ||
+          ing.foodName?.toLowerCase().includes('proteína de suero') ||
+          ing.foodName?.toLowerCase().includes('proteina de suero')
+      );
+      if (!hasProtein) {
+        optionData.ingredients.push({
+          foodName: brand,
+          exactPortion: `${scoops} ${scoops === 1 ? 'medida (scoop)' : 'medidas (scoops)'} (${Math.round(scoops * 30)}g polvo con ${pGrams}g proteína)`,
+          smaeGroup: 'Alimento de origen animal muy bajo aporte de grasa',
+          equivalentsCount: eqCount,
+          role: 'principal',
+          isPreferred: true,
+          preparationNotes: `Suplemento prescrito: ${pGrams}g de proteína de suero pura`,
+        });
+      }
+    }
+
+    if (isTargetManualMeal && optionData?.ingredients) {
+      const pGrams = Number(manualNutrientEntry.proteinGrams) || 0;
+      const directKcal = Number(manualNutrientEntry.kcal) || 0;
+      const lGrams = Number(manualNutrientEntry.lipidsGrams) || 0;
+      const cGrams = Number(manualNutrientEntry.carbsGrams) || 0;
+      const totalKcal = directKcal > 0 ? directKcal : (pGrams * 4 + lGrams * 9 + cGrams * 4);
+      const name = manualNutrientEntry.name?.trim() || (pGrams > 0 ? 'Aporte manual / Suplemento de proteína' : 'Aporte nutricional manual');
+      const eqCount = pGrams > 0 ? Number((pGrams / 7).toFixed(1)) : 1;
+      const hasManual = optionData.ingredients.some(
+        (ing: any) => ing.preparationNotes?.includes('Aporte manual contabilizado') || ing.foodName?.toLowerCase().includes('aporte manual')
+      );
+      if (!hasManual && (pGrams > 0 || totalKcal > 0 || lGrams > 0 || cGrams > 0)) {
+        optionData.ingredients.push({
+          foodName: name,
+          exactPortion: `${pGrams > 0 ? `${pGrams}g proteína, ` : ''}${totalKcal} kcal (${lGrams}g grasa, ${cGrams}g HC)`,
+          smaeGroup: pGrams > 0 ? 'Alimento de origen animal muy bajo aporte de grasa' : 'Otros',
+          equivalentsCount: eqCount,
+          role: 'principal',
+          isPreferred: true,
+          preparationNotes: `Aporte manual contabilizado: ${pGrams}g proteína, ${totalKcal} kcal, ${lGrams}g lípidos, ${cGrams}g carbohidratos`,
+        });
+      }
+    }
 
     return res.json({ option: optionData });
   } catch (error: any) {
@@ -643,12 +905,28 @@ Notas: ${dietNotes || 'Menú balanceado, sazón mexicana, fácil de preparar.'}$
       req.body.mealName,
       req.body.portions,
       req.body.preferredFoods,
-      req.body.dislikedFoods
+      req.body.dislikedFoods,
+      0,
+      undefined,
+      req.body.proteinSupplement,
+      req.body.manualNutrientEntry
     );
     const letter = (req.body.optionLetter || 'A').toUpperCase();
     const optIdx = letter === 'B' ? 1 : letter === 'C' ? 2 : 0;
-    const fallbackOpt = letter === 'B' ? fallbackMeal.optionB : letter === 'C' ? fallbackMeal.optionC : fallbackMeal.optionA;
-    const rectifiedOpt = rectifyMenuOption(fallbackOpt, req.body.portions, optIdx, req.body.mealName);
+    const fallbackOpt =
+      letter === 'B'
+        ? fallbackMeal.optionB
+        : letter === 'C'
+        ? fallbackMeal.optionC
+        : fallbackMeal.optionA;
+    const rectifiedOpt = rectifyMenuOption(
+      fallbackOpt,
+      req.body.portions,
+      optIdx,
+      req.body.mealName,
+      req.body.preferredFoods,
+      req.body.dislikedFoods
+    );
     return res.json({ option: rectifiedOpt, isFallback: true });
   }
 });
@@ -669,23 +947,43 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 // Vite middleware in dev or static serving in prod
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  const distPath = path.join(process.cwd(), 'dist');
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+    // Serve static files from dist directory with standard caching
+    app.use(express.static(distPath, { maxAge: '1h' }));
+
+    // Never return index.html for non-existent static assets
+    app.use('/assets', (req, res) => {
+      res.status(404).send('Asset not found');
+    });
+
+    // SPA fallback
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor SMAE Pro activo en http://localhost:${PORT}`);
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor SMAE Pro activo en http://0.0.0.0:${PORT} (modo: ${isProduction ? 'producción' : 'desarrollo'})`);
   });
+
+  const shutdown = () => {
+    console.log('Señal de apagado recibida, cerrando servidor HTTP de forma limpia...');
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 startServer();

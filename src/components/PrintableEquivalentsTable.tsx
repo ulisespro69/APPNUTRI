@@ -1,8 +1,8 @@
 import React from 'react';
 import { TableGridState, SMAE_GROUPS, MEAL_COLUMNS } from '../data/smaeData';
-import { calculateRowTotal, calculateColumnTotal, calculateGrandTotalEquivalents, calculateBmiInfo, calculateMacros } from '../utils/nutritionCalculations';
+import { calculateRowTotal, calculateColumnTotal, calculateGrandTotalEquivalents, calculateBmiInfo, calculateMacros, calculateSkinfoldSums } from '../utils/nutritionCalculations';
 import { MacroNutrientSummary, PatientInfo } from '../types';
-import { Table as TableIcon, Flame, Scale, Activity, Weight, Ruler } from 'lucide-react';
+import { Table as TableIcon, Flame, Scale, Activity, Weight, Ruler, Layers } from 'lucide-react';
 
 interface PrintableEquivalentsTableProps {
   tableState: TableGridState;
@@ -13,10 +13,11 @@ interface PrintableEquivalentsTableProps {
   patientAge?: string;
   patientInfo?: PatientInfo;
   macros?: MacroNutrientSummary;
+  hidePatientStrip?: boolean;
   className?: string;
 }
 
-export const PrintableEquivalentsTable: React.FC<PrintableEquivalentsTableProps> = ({
+const PrintableEquivalentsTableComponent: React.FC<PrintableEquivalentsTableProps> = ({
   tableState,
   patientName = '',
   patientGoal = '',
@@ -25,6 +26,7 @@ export const PrintableEquivalentsTable: React.FC<PrintableEquivalentsTableProps>
   patientAge = '',
   patientInfo,
   macros: inputMacros,
+  hidePatientStrip = false,
   className = '',
 }) => {
   const activeName = patientInfo?.name || patientName;
@@ -35,7 +37,7 @@ export const PrintableEquivalentsTable: React.FC<PrintableEquivalentsTableProps>
 
   const grandTotal = calculateGrandTotalEquivalents(tableState);
   const bmiInfo = calculateBmiInfo(activeHeight, activeWeight);
-  const macros = inputMacros || calculateMacros(tableState);
+  const macros = inputMacros || calculateMacros(tableState, patientInfo?.manualNutrientEntry, patientInfo?.proteinSupplement);
 
   const hasComposition = !!(
     patientInfo?.fatPercent || patientInfo?.fatKg ||
@@ -56,6 +58,26 @@ export const PrintableEquivalentsTable: React.FC<PrintableEquivalentsTableProps>
     const rowEq = calculateRowTotal(g.id, tableState);
     return acc + rowEq * g.kcal;
   }, 0);
+
+  const skinfoldSums = calculateSkinfoldSums(patientInfo?.skinfolds);
+  const skinfoldValues = [
+    patientInfo?.skinfolds?.triceps,
+    patientInfo?.skinfolds?.subescapular,
+    patientInfo?.skinfolds?.biceps,
+    patientInfo?.skinfolds?.pectoral,
+    patientInfo?.skinfolds?.axilar,
+    patientInfo?.skinfolds?.crestaIliaca,
+    patientInfo?.skinfolds?.supraespinal,
+    patientInfo?.skinfolds?.abdominal,
+    patientInfo?.skinfolds?.musloFrontal,
+    patientInfo?.skinfolds?.pantorrillaMedial,
+  ].map((v) => parseFloat(v || '')).filter((n) => !isNaN(n) && n > 0);
+
+  const skinfoldTotalSum = skinfoldValues.length > 0
+    ? skinfoldValues.reduce((acc, curr) => acc + curr, 0).toFixed(1)
+    : null;
+
+  const hasSkinfolds = skinfoldValues.length > 0;
 
   return (
     <div
@@ -91,7 +113,7 @@ export const PrintableEquivalentsTable: React.FC<PrintableEquivalentsTableProps>
       </div>
 
       {/* Patient info strip if present */}
-      {(activeName || activeWeight || activeHeight || hasComposition) && (
+      {!hidePatientStrip && (activeName || activeWeight || activeHeight || hasComposition) && (
         <div className="bg-slate-50 print:bg-transparent px-4 py-2.5 border-b border-slate-200 print:border-slate-300 flex flex-wrap items-center justify-between gap-3 text-xs print:text-2xs">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-slate-800">Paciente:</span>
@@ -108,7 +130,7 @@ export const PrintableEquivalentsTable: React.FC<PrintableEquivalentsTableProps>
       )}
 
       {/* Body Composition strip if present */}
-      {hasComposition && (
+      {!hidePatientStrip && hasComposition && (
         <div className="bg-slate-100/70 print:bg-transparent px-4 py-2 border-b border-slate-200 print:border-slate-300 flex flex-wrap items-center gap-x-4 gap-y-1 text-2xs print:text-3xs text-slate-700">
           <span className="font-bold text-slate-900 flex items-center gap-1">
             <Scale className="w-3 h-3 text-emerald-700" />
@@ -253,6 +275,47 @@ export const PrintableEquivalentsTable: React.FC<PrintableEquivalentsTableProps>
           </tbody>
         </table>
       </div>
+
+      {/* Sumatoria de Pliegues Cutáneos en Cuadro de Equivalentes Imprimible */}
+      {hasSkinfolds && (
+        <div className="bg-slate-50 print:bg-slate-100/70 border-t border-slate-200 print:border-slate-300 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-2xs print:text-3xs">
+          <div className="flex items-center gap-1.5">
+            <Layers className="w-3.5 h-3.5 text-emerald-700 print:text-slate-800" />
+            <span className="font-extrabold uppercase tracking-wider text-slate-800">
+              Sumatoria de Pliegues Cutáneos (ISAK):
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            {skinfoldSums.sum3 && (
+              <div>
+                <span className="text-slate-500 font-medium">Σ3 (Sub+Sup+Abd): </span>
+                <span className="font-black text-emerald-800 print:text-slate-900">{skinfoldSums.sum3} mm</span>
+              </div>
+            )}
+            {skinfoldSums.sum4 && (
+              <div>
+                <span className="text-slate-500 font-medium">Σ4 (D&W): </span>
+                <span className="font-black text-emerald-800 print:text-slate-900">{skinfoldSums.sum4} mm</span>
+              </div>
+            )}
+            {skinfoldSums.sum6 && (
+              <div>
+                <span className="text-slate-500 font-medium">Σ6: </span>
+                <span className="font-black text-emerald-800 print:text-slate-900">{skinfoldSums.sum6} mm</span>
+              </div>
+            )}
+            {skinfoldTotalSum && (
+              <div className="bg-emerald-800 print:bg-slate-800 text-white rounded px-2 py-0.5 font-bold">
+                <span>Σ Total: </span>
+                <span className="text-amber-300 print:text-white font-black">{skinfoldTotalSum} mm</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export const PrintableEquivalentsTable = React.memo(PrintableEquivalentsTableComponent);

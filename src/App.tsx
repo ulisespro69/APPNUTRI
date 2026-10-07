@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { NutritionSummaryBar } from './components/NutritionSummaryBar';
 import { SmaeTable } from './components/SmaeTable';
@@ -13,6 +13,7 @@ import { buildFallbackFullPlan, buildFallbackMeal } from './utils/smaeFallbackEn
 import { rectifyFullPlan, rectifyMealMenu, rectifyMenuOption, ensureMealVariety } from './utils/smaeRectifier';
 import { exportPlanToPdfNative } from './utils/pdfExport';
 import { exportPlanToWord } from './utils/wordExport';
+import { autoDistributeEquivalents } from './utils/autoDistribute';
 import confetti from 'canvas-confetti';
 
 // Robust JSON request helper that protects against HTML responses (like 502/504 or fallback pages)
@@ -56,15 +57,39 @@ import {
   Printer,
   ChevronUp,
   EyeOff,
+  Bookmark,
+  FolderOpen,
+  Plus,
+  Star,
 } from 'lucide-react';
 
 export default function App() {
   const [tableState, setTableState] = useState<TableGridState>(INITIAL_TABLE_STATE);
   const [patientInfo, setPatientInfo] = useState<PatientInfo>({
-    name: '',
+    name: 'Carlos Mendoza',
     date: new Date().toISOString().split('T')[0],
-    goal: '',
-    notes: '',
+    goal: 'Desarrollo Muscular y Definición (Endo-mesomorfo)',
+    notes: 'Plan nutricional estructurado según metodología Heath-Carter y SMAE 5ta Edición.',
+    gender: 'Hombre',
+    age: 32,
+    weight: 79.0,
+    height: 1.70,
+    skinfolds: {
+      triceps: 8,
+      subescapular: 10,
+      supraespinal: 8.5,
+      abdominal: 14,
+      musloFrontal: 11,
+      pantorrillaMedial: 6,
+    },
+    girths: {
+      brazoContraido: 37.0,
+      pantorrillaMaximo: 38.0,
+    },
+    breadths: {
+      humeral: 6.4,
+      femoral: 9.4,
+    },
   });
 
   const [isGenerating, setIsGenerating] = useState(false);
@@ -106,7 +131,7 @@ export default function App() {
   >({});
 
   // Restore previous option/recipe for a specific meal and option letter (A, B, or C)
-  const handleRestoreOption = (mealName: string, letter: MealOptionLetter) => {
+  const handleRestoreOption = useCallback((mealName: string, letter: MealOptionLetter) => {
     setOptionHistory((prev) => {
       const mealHist = prev[mealName];
       const letterHist = mealHist?.[letter];
@@ -121,9 +146,10 @@ export default function App() {
           ...prevPlan,
           meals: prevPlan.meals.map((m) => {
             if (m.mealName.toLowerCase() !== mealName.toLowerCase()) return m;
+            const key = letter === 'A' ? 'optionA' : letter === 'B' ? 'optionB' : 'optionC';
             return {
               ...m,
-              [letter === 'A' ? 'optionA' : letter === 'B' ? 'optionB' : 'optionC']: previousOption,
+              [key]: previousOption,
             };
           }),
         };
@@ -137,10 +163,10 @@ export default function App() {
         },
       };
     });
-  };
+  }, []);
 
   // Toggle option letter for a specific meal
-  const handleToggleMealOption = (mealName: string, letter: MealOptionLetter) => {
+  const handleToggleMealOption = useCallback((mealName: string, letter: MealOptionLetter) => {
     setSelectedMealOptions((prev) => {
       const current = prev[mealName] ? [...prev[mealName]] : ['A', 'B', 'C'];
       let updated: MealOptionLetter[];
@@ -156,23 +182,26 @@ export default function App() {
         [mealName]: updated,
       };
     });
-  };
+  }, []);
 
   // Explicitly set option letters for a specific meal
-  const handleSetMealOptions = (mealName: string, letters: MealOptionLetter[]) => {
+  const handleSetMealOptions = useCallback((mealName: string, letters: MealOptionLetter[]) => {
     setSelectedMealOptions((prev) => ({
       ...prev,
       [mealName]: letters,
     }));
-  };
+  }, []);
 
   const resultsRef = useRef<HTMLDivElement>(null);
   const printAreaRef = useRef<HTMLDivElement>(null);
 
-  const macros = calculateMacros(tableState);
+  const macros = useMemo(
+    () => calculateMacros(tableState, patientInfo.manualNutrientEntry, patientInfo.proteinSupplement),
+    [tableState, patientInfo.manualNutrientEntry, patientInfo.proteinSupplement]
+  );
 
   // Update cell handler
-  const handleCellChange = (groupId: string, mealKey: MealKey, value: number) => {
+  const handleCellChange = useCallback((groupId: string, mealKey: MealKey, value: number) => {
     setTableState((prev) => ({
       ...prev,
       [groupId]: {
@@ -180,10 +209,10 @@ export default function App() {
         [mealKey]: value,
       },
     }));
-  };
+  }, []);
 
   // Reset table to all zeros and clean patient fields
-  const handleResetTable = () => {
+  const handleResetTable = useCallback(() => {
     const emptyState: TableGridState = {};
     SMAE_GROUPS.forEach((group) => {
       emptyState[group.id] = {
@@ -222,12 +251,12 @@ export default function App() {
     setGeneratedPlan(null);
     setOptionHistory({});
     setErrorMsg(null);
-  };
+  }, []);
 
   // Load preset
-  const handleSelectPreset = (presetData: TableGridState) => {
+  const handleSelectPreset = useCallback((presetData: TableGridState) => {
     setTableState(presetData);
-  };
+  }, []);
 
   const buildDietNotes = (info: PatientInfo) => {
     const bmi = calculateBmiInfo(info.height, info.weight);
@@ -248,35 +277,75 @@ export default function App() {
     return parts.join(' - ');
   };
 
+  // Aggregates general and meal-specific preferred and disliked foods
+  const getAggregatedPreferences = (specificMealKey?: string) => {
+    const generalLikes = patientInfo.preferredFoods || '';
+    const generalDislikes = patientInfo.dislikedFoods || '';
+
+    const mealLikes = specificMealKey && patientInfo.mealPreferences
+      ? (patientInfo.mealPreferences as any)[specificMealKey]?.likes || ''
+      : '';
+    const mealDislikes = specificMealKey && patientInfo.mealPreferences
+      ? (patientInfo.mealPreferences as any)[specificMealKey]?.dislikes || ''
+      : '';
+
+    const allLikesFromMeals = patientInfo.mealPreferences
+      ? (Object.values(patientInfo.mealPreferences) as MealPreference[]).map((p) => p.likes).filter(Boolean)
+      : [];
+    const allDislikesFromMeals = patientInfo.mealPreferences
+      ? (Object.values(patientInfo.mealPreferences) as MealPreference[]).map((p) => p.dislikes).filter(Boolean)
+      : [];
+
+    const prefList = Array.from(
+      new Set(
+        [generalLikes, ...allLikesFromMeals, mealLikes]
+          .join(', ')
+          .split(/[,;\n]+/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+    ).join(', ');
+
+    const dislikeList = Array.from(
+      new Set(
+        [generalDislikes, ...allDislikesFromMeals, mealDislikes]
+          .join(', ')
+          .split(/[,;\n]+/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+    ).join(', ');
+
+    return { prefList, dislikeList };
+  };
+
   // Main Generate Button Handler (supports keeping selected print options)
   const handleGenerateMenus = async (keepSelected: boolean = false) => {
     setErrorMsg(null);
+    let currentTable = tableState;
+    if (macros.totalEquivalents === 0) {
+      const targetKcal = patientInfo.macroPrescription?.targetKcal || 1800;
+      const pPercent = patientInfo.macroPrescription?.proteinPercent || 20;
+      const lPercent = patientInfo.macroPrescription?.lipidsPercent || 25;
+      const cPercent = patientInfo.macroPrescription?.carbsPercent || 55;
+      currentTable = autoDistributeEquivalents(targetKcal, pPercent, lPercent, cPercent);
+      setTableState(currentTable);
+    }
     setIsGenerating(true);
 
     // Prepare table payload formatted with readable group names
     const tableDataPayload: Record<string, Record<string, number>> = {};
     SMAE_GROUPS.forEach((g) => {
       tableDataPayload[g.name] = {
-        Desayuno: tableState[g.id]?.desayuno || 0,
-        'Colación 1': tableState[g.id]?.colacion1 || 0,
-        Comida: tableState[g.id]?.comida || 0,
-        'Colación 2': tableState[g.id]?.colacion2 || 0,
-        Cena: tableState[g.id]?.cena || 0,
+        Desayuno: currentTable[g.id]?.desayuno || 0,
+        'Colación 1': currentTable[g.id]?.colacion1 || 0,
+        Comida: currentTable[g.id]?.comida || 0,
+        'Colación 2': currentTable[g.id]?.colacion2 || 0,
+        Cena: currentTable[g.id]?.cena || 0,
       };
     });
 
-    const prefList = patientInfo.mealPreferences
-      ? (Object.values(patientInfo.mealPreferences) as MealPreference[])
-          .map((p) => p.likes)
-          .filter(Boolean)
-          .join(', ')
-      : '';
-    const dislikeList = patientInfo.mealPreferences
-      ? (Object.values(patientInfo.mealPreferences) as MealPreference[])
-          .map((p) => p.dislikes)
-          .filter(Boolean)
-          .join(', ')
-      : '';
+    const { prefList, dislikeList } = getAggregatedPreferences();
 
     // Build preserved options dictionary if keeping selected for printing
     const preservedMealsPayload: Record<string, any> = {};
@@ -304,6 +373,8 @@ export default function App() {
           preferredFoods: prefList,
           dislikedFoods: dislikeList,
           mealPreferences: patientInfo.mealPreferences,
+          proteinSupplement: patientInfo.proteinSupplement,
+          manualNutrientEntry: patientInfo.manualNutrientEntry,
           preservedMeals: Object.keys(preservedMealsPayload).length > 0 ? preservedMealsPayload : undefined,
           previousOptionHistory: optionHistory,
         });
@@ -313,7 +384,10 @@ export default function App() {
           tableDataPayload,
           buildDietNotes(patientInfo),
           prefList,
-          dislikeList
+          dislikeList,
+          patientInfo.mealPreferences,
+          patientInfo.proteinSupplement,
+          patientInfo.manualNutrientEntry
         );
         resultData = {
           ...fallback,
@@ -335,14 +409,24 @@ export default function App() {
       }
 
       // Rectify plan meticulously according to SMAE 5th Edition standards
-      resultData = rectifyFullPlan(resultData, tableDataPayload, dislikeList);
+      resultData = rectifyFullPlan(
+        resultData,
+        tableDataPayload,
+        dislikeList,
+        prefList,
+        patientInfo.mealPreferences,
+        patientInfo.proteinSupplement,
+        patientInfo.manualNutrientEntry
+      );
 
-      setGeneratedPlan({
+      const newGeneratedPlan = {
         patientNotes: resultData.patientNotes,
         isFallback: Boolean(resultData.isFallback),
         meals: resultData.meals || [],
         generatedAt: new Date().toISOString(),
-      });
+      };
+
+      setGeneratedPlan(newGeneratedPlan);
 
       // Track newly generated options in history to avoid repetition in future regenerations
       setOptionHistory(prev => {
@@ -407,18 +491,7 @@ export default function App() {
       });
     }
 
-    const prefList = patientInfo.mealPreferences
-      ? (Object.values(patientInfo.mealPreferences) as MealPreference[])
-          .map((p) => p.likes)
-          .filter(Boolean)
-          .join(', ')
-      : '';
-    const dislikeList = patientInfo.mealPreferences
-      ? (Object.values(patientInfo.mealPreferences) as MealPreference[])
-          .map((p) => p.dislikes)
-          .filter(Boolean)
-          .join(', ')
-      : '';
+    const { prefList, dislikeList } = getAggregatedPreferences(column.key);
 
     // Check which options to maintain
     const currentMeal = generatedPlan?.meals.find(
@@ -453,6 +526,8 @@ export default function App() {
           existingMenuTitles,
           keptOptions,
           keepLetters,
+          proteinSupplement: patientInfo.proteinSupplement,
+          manualNutrientEntry: patientInfo.manualNutrientEntry,
         });
       } catch (apiErr) {
         console.warn('Fallo al regenerar vía API, usando motor SMAE 5ta Edición local:', apiErr);
@@ -460,7 +535,11 @@ export default function App() {
           column.label,
           portionsForMeal,
           prefList,
-          dislikeList
+          dislikeList,
+          0,
+          undefined,
+          patientInfo.proteinSupplement,
+          patientInfo.manualNutrientEntry
         );
         if (keptOptions && Array.isArray(keepLetters)) {
           if (keepLetters.includes('A') && keptOptions.optionA) newMealData.optionA = keptOptions.optionA;
@@ -470,7 +549,7 @@ export default function App() {
       }
 
       // Rectify regenerated meal according to SMAE 5th Edition standards
-      newMealData = rectifyMealMenu(newMealData, portionsForMeal, dislikeList);
+      newMealData = rectifyMealMenu(newMealData, portionsForMeal, dislikeList, prefList, patientInfo.proteinSupplement, patientInfo.manualNutrientEntry);
 
       if (generatedPlan) {
         if (currentMeal) {
@@ -505,7 +584,7 @@ export default function App() {
     }
   };
 
-  // Regenerate a single option (Option A, B, or C) for a specific meal
+  // Regenerate a single option (Option A, B, C, or D) for a specific meal
   const handleRegenerateOption = async (mealName: string, letter: MealOptionLetter) => {
     setRegeneratingOption({ mealName, letter });
     setErrorMsg(null);
@@ -529,18 +608,7 @@ export default function App() {
       });
     }
 
-    const prefList = patientInfo.mealPreferences
-      ? (Object.values(patientInfo.mealPreferences) as MealPreference[])
-          .map((p) => p.likes)
-          .filter(Boolean)
-          .join(', ')
-      : '';
-    const dislikeList = patientInfo.mealPreferences
-      ? (Object.values(patientInfo.mealPreferences) as MealPreference[])
-          .map((p) => p.dislikes)
-          .filter(Boolean)
-          .join(', ')
-      : '';
+    const { prefList, dislikeList } = getAggregatedPreferences(column.key);
 
     try {
       let option: MenuOption;
@@ -555,6 +623,8 @@ export default function App() {
           dislikedFoods: dislikeList,
           specificPreferences: patientInfo.mealPreferences?.[column.key],
           existingMenuTitles,
+          proteinSupplement: patientInfo.proteinSupplement,
+          manualNutrientEntry: patientInfo.manualNutrientEntry,
         });
         option = responseData.option;
       } catch (apiErr) {
@@ -563,14 +633,79 @@ export default function App() {
           column.label,
           portionsForMeal,
           prefList,
-          dislikeList
+          dislikeList,
+          0,
+          undefined,
+          patientInfo.proteinSupplement,
+          patientInfo.manualNutrientEntry
         );
-        option = letter === 'B' ? fallbackMeal.optionB : letter === 'C' ? fallbackMeal.optionC : fallbackMeal.optionA;
+        option =
+          letter === 'B'
+            ? fallbackMeal.optionB
+            : letter === 'C'
+            ? fallbackMeal.optionC
+            : fallbackMeal.optionA;
       }
 
       // Rectify regenerated option according to SMAE 5th Edition
       const optIdx = letter === 'B' ? 1 : letter === 'C' ? 2 : 0;
-      option = rectifyMenuOption(option, portionsForMeal, optIdx, mealName);
+      option = rectifyMenuOption(option, portionsForMeal, optIdx, mealName, prefList, dislikeList);
+
+      const curMealKey = column.key;
+      const timingSupp = patientInfo.proteinSupplement?.timing || 'colacion2';
+      const isTargetProtein = patientInfo.proteinSupplement?.enabled && patientInfo.proteinSupplement?.includeInMenu && (timingSupp === 'any' ? curMealKey === 'colacion2' : curMealKey === timingSupp);
+      if (isTargetProtein && option?.ingredients) {
+        const brand = patientInfo.proteinSupplement!.brandOrType || 'Proteína de suero de leche (Whey Protein)';
+        const scoops = patientInfo.proteinSupplement!.scoops || 1;
+        const pGrams = patientInfo.proteinSupplement!.totalProteinGrams || (scoops * (patientInfo.proteinSupplement!.proteinGramsPerServing || 25));
+        const eqCount = Number((pGrams / 7).toFixed(1));
+        const hasProtein = option.ingredients.some(
+          (ing: any) =>
+            ing.foodName?.toLowerCase().includes('suero') ||
+            ing.foodName?.toLowerCase().includes('whey') ||
+            ing.foodName?.toLowerCase().includes('proteína en polvo') ||
+            ing.foodName?.toLowerCase().includes('proteina en polvo') ||
+            ing.foodName?.toLowerCase().includes('proteína de suero') ||
+            ing.foodName?.toLowerCase().includes('proteina de suero')
+        );
+        if (!hasProtein) {
+          option.ingredients.push({
+            foodName: brand,
+            exactPortion: `${scoops} ${scoops === 1 ? 'medida (scoop)' : 'medidas (scoops)'} (${Math.round(scoops * 30)}g polvo con ${pGrams}g proteína)`,
+            smaeGroup: 'Alimento de origen animal muy bajo aporte de grasa',
+            equivalentsCount: eqCount,
+            role: 'principal',
+            isPreferred: true,
+            preparationNotes: `Suplemento prescrito: ${pGrams}g de proteína de suero pura`,
+          });
+        }
+      }
+
+      const manualTiming = patientInfo.manualNutrientEntry?.timing || 'colacion2';
+      const isTargetManual = patientInfo.manualNutrientEntry?.enabled && patientInfo.manualNutrientEntry?.includeInMenu && (manualTiming === 'any' ? curMealKey === 'colacion2' : curMealKey === manualTiming);
+      if (isTargetManual && option?.ingredients) {
+        const pGrams = Number(patientInfo.manualNutrientEntry!.proteinGrams) || 0;
+        const directKcal = Number(patientInfo.manualNutrientEntry!.kcal) || 0;
+        const lGrams = Number(patientInfo.manualNutrientEntry!.lipidsGrams) || 0;
+        const cGrams = Number(patientInfo.manualNutrientEntry!.carbsGrams) || 0;
+        const totalKcal = directKcal > 0 ? directKcal : (pGrams * 4 + lGrams * 9 + cGrams * 4);
+        const name = patientInfo.manualNutrientEntry!.name?.trim() || (pGrams > 0 ? 'Aporte manual / Suplemento de proteína' : 'Aporte nutricional manual');
+        const eqCount = pGrams > 0 ? Number((pGrams / 7).toFixed(1)) : 1;
+        const hasManual = option.ingredients.some(
+          (ing: any) => ing.preparationNotes?.includes('Aporte manual contabilizado') || ing.foodName?.toLowerCase().includes('aporte manual')
+        );
+        if (!hasManual && (pGrams > 0 || totalKcal > 0 || lGrams > 0 || cGrams > 0)) {
+          option.ingredients.push({
+            foodName: name,
+            exactPortion: `${pGrams > 0 ? `${pGrams}g proteína, ` : ''}${totalKcal} kcal (${lGrams}g grasa, ${cGrams}g HC)`,
+            smaeGroup: pGrams > 0 ? 'Alimento de origen animal muy bajo aporte de grasa' : 'Otros',
+            equivalentsCount: eqCount,
+            role: 'principal',
+            isPreferred: true,
+            preparationNotes: `Aporte manual contabilizado: ${pGrams}g proteína, ${totalKcal} kcal, ${lGrams}g lípidos, ${cGrams}g carbohidratos`,
+          });
+        }
+      }
 
       if (generatedPlan) {
         const currentMeal = generatedPlan.meals.find(
@@ -578,7 +713,11 @@ export default function App() {
         );
         if (currentMeal) {
           const currentOption =
-            letter === 'A' ? currentMeal.optionA : letter === 'B' ? currentMeal.optionB : currentMeal.optionC;
+            letter === 'A'
+              ? currentMeal.optionA
+              : letter === 'B'
+              ? currentMeal.optionB
+              : currentMeal.optionC;
           if (currentOption) {
             setOptionHistory((prev) => {
               const existingMealHistory = prev[currentMeal.mealName] || { A: [], B: [], C: [] };
@@ -599,9 +738,15 @@ export default function App() {
           ...generatedPlan,
           meals: generatedPlan.meals.map((m) => {
             if (m.mealName.toLowerCase() !== mealName.toLowerCase()) return m;
+            const optKey =
+              letter === 'A'
+                ? 'optionA'
+                : letter === 'B'
+                ? 'optionB'
+                : 'optionC';
             const updatedMeal: MealMenu = {
               ...m,
-              [letter === 'A' ? 'optionA' : letter === 'B' ? 'optionB' : 'optionC']: option,
+              [optKey]: option,
             };
             return ensureMealVariety(updatedMeal, dislikeList);
           }),
@@ -647,7 +792,7 @@ export default function App() {
       setIsExportingPdf(true);
       const safePatientName = patientInfo.name ? patientInfo.name.replace(/\s+/g, '_') : 'Paciente';
       const fileName = `Plan_Nutricional_SMAE_${safePatientName}.pdf`;
-      exportPlanToPdfNative(generatedPlan, patientInfo, macros, fileName, selectedMealOptions, tableState);
+      await exportPlanToPdfNative(generatedPlan, patientInfo, macros, fileName, selectedMealOptions, tableState);
     } catch (err: any) {
       console.error('PDF export error:', err);
       setErrorMsg('Ocurrió un error al generar el archivo PDF.');
@@ -693,40 +838,28 @@ export default function App() {
             tableState={tableState}
             onChangeCell={handleCellChange}
             patientName={patientInfo.name}
+            patientInfo={patientInfo}
           />
         </div>
 
-        {/* Big Action Button */}
-        <div className="flex flex-col items-center justify-center my-6 sm:my-8 no-print">
+        {/* Botón Principal Generar con IA */}
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 my-6 sm:my-8 no-print flex-wrap">
           <button
             id="btn-generate-ai-menus"
             type="button"
-            onClick={handleGenerateMenus}
-            disabled={isGenerating || macros.totalEquivalents === 0}
-            className={`w-full sm:w-auto px-8 py-4 rounded-2xl font-heading font-black text-base sm:text-lg tracking-wide uppercase shadow-lg transition-all flex items-center justify-center gap-3 ${
-              isGenerating || macros.totalEquivalents === 0
-                ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
-                : 'bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white shadow-emerald-900/20 hover:shadow-emerald-900/30 hover:-translate-y-0.5 active:translate-y-0'
-            }`}
+            onClick={() => handleGenerateMenus(false)}
+            disabled={isGenerating}
+            className="w-full sm:w-auto px-8 py-4 rounded-2xl font-heading font-black text-base sm:text-lg tracking-wide uppercase shadow-lg transition-all flex items-center justify-center gap-3 bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white shadow-emerald-900/20 hover:shadow-emerald-900/30 hover:-translate-y-0.5 active:translate-y-0 cursor-pointer disabled:opacity-50"
           >
             {isGenerating ? (
               <>
                 <Loader2 className="w-6 h-6 animate-spin text-white" />
-                <span>Analizando SMAE 5ta Edición y Generando Menús...</span>
+                <span>Elaborando Menús con SMAE 5ta Edición...</span>
               </>
             ) : (
-              <>
-                <Sparkles className="w-6 h-6 text-amber-300 animate-pulse" />
-                <span>GENERAR 3 OPCIONES DE MENÚ POR TIEMPO CON IA</span>
-              </>
+              <span>GENERAR 3 OPCIONES DE MENÚ POR TIEMPO CON IA</span>
             )}
           </button>
-
-          {macros.totalEquivalents === 0 && (
-            <p className="text-xs text-amber-700 mt-2 font-medium">
-              * Ingrese al menos 1 porción en la tabla o seleccione una plantilla superior para generar.
-            </p>
-          )}
         </div>
 
         {/* Loading Progress State */}
@@ -784,7 +917,6 @@ export default function App() {
         {/* Generated Plan Container */}
         {generatedPlan && (
           <div ref={resultsRef} className="mt-10" id="printable-plan-container">
-            
             {generatedPlan.isFallback && (
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 mb-6 flex items-start gap-3 text-amber-900 shadow-xs no-print">
                 <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -799,16 +931,25 @@ export default function App() {
               </div>
             )}
 
-            {/* Clinical Marco: Anthropometric parameters & Kcal, Protein, Lipids, Carbs table */}
+            {/* Clinical Marco: Anthropometric parameters & Kcal, Protein, Lipids, Carbs table & Somatocarta (Oculto en pantalla, visible en impresión) */}
             <AnthropometricMacroFrame
               patientInfo={patientInfo}
               macros={macros}
-              className="mb-6 print:mb-4"
+              className="hidden print:block print:mb-4"
             />
 
-            {/* General Nutritionist Notes if present */}
+            {/* Cuadro de Distribución de Equivalentes SMAE después de la Somatocarta (Oculto en pantalla, visible en impresión) */}
+            <PrintableEquivalentsTable
+              tableState={tableState}
+              patientInfo={patientInfo}
+              macros={macros}
+              hidePatientStrip={true}
+              className="hidden print:block print:mb-4"
+            />
+
+            {/* General Nutritionist Notes if present (Oculto en pantalla, visible en impresión) */}
             {generatedPlan.patientNotes && (
-              <div className="mb-6 print:mb-4 p-4 print:p-3 bg-white rounded-2xl border border-slate-300 print:border-slate-400 text-xs sm:text-sm print:text-xs text-slate-800 leading-relaxed shadow-xs print-break-inside-avoid">
+              <div className="hidden print:block mb-6 print:mb-4 p-4 print:p-3 bg-white rounded-2xl border border-slate-300 print:border-slate-400 text-xs sm:text-sm print:text-xs text-slate-800 leading-relaxed shadow-xs print-break-inside-avoid">
                 <span className="font-extrabold text-emerald-900 print:text-slate-900">Recomendaciones Generales: </span>
                 {generatedPlan.patientNotes}
               </div>
@@ -854,7 +995,7 @@ export default function App() {
                   </div>
                   <div>
                     <div className="text-xs font-bold text-slate-800">Menús Listos para Entregar</div>
-                    <div className="text-2xs text-slate-500">3 Opciones calculadas con porciones exactas SMAE 5ta Ed.</div>
+                    <div className="text-2xs text-slate-500">3 Opciones variadas con porciones exactas SMAE 5ta Ed.</div>
                   </div>
                 </div>
 
@@ -974,8 +1115,6 @@ export default function App() {
           <div className="flex items-center gap-2 font-medium">
             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
             <span>Generador de Menús SMAE Pro © {new Date().getFullYear()}</span>
-            <span className="text-slate-300">|</span>
-            <span>Sistema Mexicano de Alimentos Equivalentes 5ta Edición</span>
           </div>
           <div className="text-slate-400 text-2xs">
             Desarrollado para Nutriólogas y Profesionales de la Salud

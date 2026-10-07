@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, FileText, Loader2, Download } from 'lucide-react';
+import { RefreshCw, FileText, Loader2, Download, BookOpen } from 'lucide-react';
 import { PRESETS } from '../data/smaeData';
 import { TableGridState } from '../data/smaeData';
 import { SmaeFoodSearch } from './SmaeFoodSearch';
@@ -30,17 +30,19 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="flex items-center justify-between h-16 sm:h-20 gap-2 sm:gap-4">
           {/* Brand Logo & Title */}
           <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-tr from-emerald-700 via-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-200">
-              <span className="font-heading font-extrabold text-lg sm:text-xl tracking-tight">ΔS</span>
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-tr from-emerald-700 via-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-200 overflow-hidden relative">
+              <span
+                style={{ fontSize: '38px', textAlign: 'center', lineHeight: '41px' }}
+                className="font-heading font-black text-[38px] leading-[41px] text-center tracking-normal select-none flex items-center justify-center w-full h-full transform scale-125 sm:scale-130 translate-y-[2px] sm:translate-y-[3px] origin-center"
+              >
+                ꛎ
+              </span>
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-xl font-extrabold text-slate-900 tracking-tight font-heading">
-                  Generador de Menús
+                  |SCIENCE
                 </h1>
-                <span className="hidden lg:inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  SMAE 5ta Edición
-                </span>
               </div>
               <p className="text-xs text-slate-500 hidden xl:block font-medium">
                 Software para cálculo de equivalentes y diseño automatizado de dietas con IA
@@ -50,11 +52,25 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Buscador de Alimentos SMAE 5ª Edición */}
           <div className="flex-1 max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg min-w-0">
-            <SmaeFoodSearch />
+            <SmaeFoodSearch onOpenFullGuide={onOpenGuide} />
           </div>
 
           {/* Quick Actions */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Abrir ventana de búsqueda completa (Oculto por solicitud) */}
+            {onOpenGuide && (
+              <button
+                id="btn-navbar-open-guide"
+                type="button"
+                onClick={onOpenGuide}
+                className="hidden items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg shadow-2xs transition-colors"
+                title="Abrir ventana de búsqueda y catálogo oficial SMAE 5ª Ed."
+              >
+                <BookOpen className="w-3.5 h-3.5 text-emerald-700" />
+                <span className="hidden md:inline">Ventana SMAE</span>
+              </button>
+            )}
+
             {/* Clear table */}
             <button
               id="btn-reset-table"

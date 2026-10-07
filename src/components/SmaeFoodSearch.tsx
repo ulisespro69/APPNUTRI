@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useDeferredValue } from 'react';
 import {
   Search,
   X,
@@ -11,12 +11,14 @@ import {
   Info,
   ExternalLink,
   Sparkles,
+  Maximize2,
 } from 'lucide-react';
 import { SMAEFoodItem, SMAE_CATEGORIES } from '../data/smaeFoodsDatabase';
 import { searchSpecificSmaeFood } from '../utils/smaeFoodSearchUtils';
 
 interface SmaeFoodSearchProps {
   className?: string;
+  onOpenFullGuide?: () => void;
 }
 
 const POPULAR_SEARCH_SUGGESTIONS = [
@@ -33,17 +35,18 @@ const POPULAR_SEARCH_SUGGESTIONS = [
   'Arroz cocido',
 ];
 
-export const SmaeFoodSearch: React.FC<SmaeFoodSearchProps> = ({ className = '' }) => {
+export const SmaeFoodSearch: React.FC<SmaeFoodSearchProps> = ({ className = '', onOpenFullGuide }) => {
   const [query, setQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Search results strictly matching query and closely named foods
+  // Search results strictly matching query and closely named foods (deferred for zero-latency left-to-right typing)
+  const deferredQuery = useDeferredValue(query);
   const searchResults = useMemo(() => {
-    return searchSpecificSmaeFood(query);
-  }, [query]);
+    return searchSpecificSmaeFood(deferredQuery);
+  }, [deferredQuery]);
 
   // Click outside to close dropdown
   useEffect(() => {
@@ -101,6 +104,7 @@ export const SmaeFoodSearch: React.FC<SmaeFoodSearchProps> = ({ className = '' }
           id="input-search-smae"
           ref={inputRef}
           type="text"
+          dir="ltr"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -108,7 +112,12 @@ export const SmaeFoodSearch: React.FC<SmaeFoodSearchProps> = ({ className = '' }
           }}
           onFocus={() => setIsOpen(true)}
           placeholder="Buscar alimento en SMAE 5ª Ed..."
-          className="w-full pl-9 pr-14 sm:pr-20 py-2 text-xs sm:text-sm bg-slate-50 hover:bg-white focus:bg-white text-slate-800 placeholder-slate-400 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200/50 transition-all shadow-2xs outline-none"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
+          style={{ direction: 'ltr', textAlign: 'left', unicodeBidi: 'plaintext' }}
+          className="w-full pl-9 pr-14 sm:pr-20 py-2 text-left text-xs sm:text-sm bg-slate-50 hover:bg-white focus:bg-white text-slate-800 placeholder-slate-400 rounded-xl border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200/50 transition-all shadow-2xs outline-none"
         />
 
         {/* Clear or Shortcut badge */}
@@ -134,32 +143,56 @@ export const SmaeFoodSearch: React.FC<SmaeFoodSearchProps> = ({ className = '' }
         </div>
       </div>
 
-      {/* Floating Results Dropdown */}
+      {/* Floating Results Dropdown - Fit to screen */}
       {isOpen && (
         <div
           id="smae-search-dropdown"
-          className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-[calc(100vw-2rem)] sm:w-[480px] md:w-[540px] max-w-[94vw] bg-white rounded-2xl shadow-2xl border border-emerald-100/90 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+          className="fixed inset-x-2 top-16 sm:top-auto sm:inset-x-auto sm:absolute sm:right-0 sm:mt-2 sm:w-[500px] md:w-[560px] max-w-[calc(100vw-1rem)] bg-white rounded-2xl shadow-2xl border border-emerald-100/90 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
         >
           {/* Top Panel Banner */}
-          <div className="bg-gradient-to-r from-emerald-800 via-emerald-900 to-teal-900 px-4 py-2.5 text-white flex items-center justify-between">
+          <div className="bg-gradient-to-r from-emerald-800 via-emerald-900 to-teal-900 px-3.5 sm:px-4 py-2.5 text-white flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <h4 className="text-xs sm:text-sm font-bold tracking-tight">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+              <h4 className="text-xs sm:text-sm font-bold tracking-tight truncate">
                 Buscador Oficial SMAE 5ª Edición
               </h4>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-emerald-200 font-medium hidden sm:inline">
-                {query.trim().length >= 2
-                  ? `${searchResults.totalFound} alimento(s) encontrado(s)`
-                  : 'Catálogo de alimentos'}
-              </span>
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {query.trim().length > 0 && (
+                <button
+                  id="btn-clear-dropdown-query"
+                  type="button"
+                  onClick={() => {
+                    setQuery('');
+                    inputRef.current?.focus();
+                  }}
+                  className="px-2 py-0.5 text-3xs sm:text-2xs font-bold bg-emerald-950/40 hover:bg-emerald-950/80 text-emerald-200 hover:text-white rounded-md border border-emerald-700/40 transition-colors"
+                  title="Limpiar buscador para ingresar nuevo alimento"
+                >
+                  Limpiar
+                </button>
+              )}
+              {onOpenFullGuide && (
+                <button
+                  id="btn-expand-full-guide"
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    onOpenFullGuide();
+                  }}
+                  className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-3xs sm:text-2xs font-bold bg-emerald-950/40 hover:bg-emerald-950/80 text-emerald-200 hover:text-white rounded-md border border-emerald-700/40 transition-colors"
+                  title="Ajustar a ventana completa de búsqueda y catálogo"
+                >
+                  <Maximize2 className="w-3 h-3" />
+                  <span>Ventana</span>
+                </button>
+              )}
               <button
                 id="btn-close-smae-search"
                 type="button"
                 onClick={() => setIsOpen(false)}
                 className="p-1 text-emerald-200 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                title="Cerrar buscador"
+                title="Cerrar buscador (Esc)"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -216,7 +249,7 @@ export const SmaeFoodSearch: React.FC<SmaeFoodSearchProps> = ({ className = '' }
                 <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
                   No se encontró ningún alimento con el término &ldquo;<span className="font-semibold text-slate-700">{query}</span>&rdquo;. Prueba con términos genéricos como <span className="text-emerald-700 font-medium">pollo</span>, <span className="text-emerald-700 font-medium">avena</span>, <span className="text-emerald-700 font-medium">huevo</span> o <span className="text-emerald-700 font-medium">manzana</span>.
                 </p>
-                <div className="flex flex-wrap justify-center gap-1.5">
+                <div className="flex flex-wrap justify-center gap-1.5 mb-3">
                   {POPULAR_SEARCH_SUGGESTIONS.slice(0, 5).map((item) => (
                     <button
                       key={item}
@@ -227,6 +260,18 @@ export const SmaeFoodSearch: React.FC<SmaeFoodSearchProps> = ({ className = '' }
                       {item}
                     </button>
                   ))}
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery('');
+                      inputRef.current?.focus();
+                    }}
+                    className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-colors shadow-2xs inline-flex items-center gap-1.5"
+                  >
+                    <span>Limpiar buscador e ingresar otro alimento</span>
+                  </button>
                 </div>
               </div>
             )}

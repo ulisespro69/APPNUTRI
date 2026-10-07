@@ -1,9 +1,54 @@
-import jsPDF from 'jspdf';
+import * as jspdfModule from 'jspdf';
 import { GeneratedPlan, PatientInfo, MacroNutrientSummary, MealOptionLetter } from '../types';
-import { normalizeOptionSelection, calculateRowTotal, calculateColumnTotal, calculateGrandTotalEquivalents, calculateBmiInfo, calculateSkinfoldSums } from './nutritionCalculations';
+import { normalizeOptionSelection, calculateRowTotal, calculateColumnTotal, calculateGrandTotalEquivalents, calculateBmiInfo, calculateSkinfoldSums, calculateHeathCarterSomatotype } from './nutritionCalculations';
 import { TableGridState, SMAE_GROUPS, MEAL_COLUMNS } from '../data/smaeData';
+import { getSomatocartaPngDataUrl } from './somatocartaGenerator';
+import { parseAndScalePortion, getGroupBadgeConfig, detectTrueSMAEGroup, detectIngredientRole, cleanSpacing } from './smaeRectifier';
 
-export function exportPlanToPdfNative(
+const JsPdfConstructor: any = (jspdfModule as any).jsPDF || (jspdfModule as any).default || jspdfModule;
+
+function getGroupPdfColor(shortName: string): [number, number, number] {
+  switch (shortName) {
+    case 'Verdura':
+      return [4, 120, 87]; // emerald-700
+    case 'Fruta':
+      return [180, 83, 9]; // amber-700
+    case 'Cereales s/g':
+      return [133, 77, 14]; // yellow-800
+    case 'Cereales c/g':
+      return [146, 64, 14]; // amber-800
+    case 'Leguminosas':
+      return [87, 83, 78]; // stone-600
+    case 'AOA Muy Bajo':
+    case 'AOA Bajo':
+      return [190, 18, 60]; // rose-700
+    case 'AOA Moderado':
+      return [194, 65, 12]; // orange-700
+    case 'AOA Alto':
+      return [185, 28, 28]; // red-700
+    case 'Leche Descremada':
+    case 'Leche Semidescr.':
+      return [3, 105, 161]; // sky-700
+    case 'Leche Entera':
+      return [29, 78, 216]; // blue-700
+    case 'Leche c/ Azúcar':
+      return [67, 56, 202]; // indigo-700
+    case 'Grasas s/ Prot':
+      return [77, 124, 15]; // lime-700
+    case 'Grasas c/ Prot':
+      return [15, 118, 110]; // teal-700
+    case 'Azúcar s/ Grasa':
+      return [126, 34, 206]; // purple-700
+    case 'Azúcar c/ Grasa':
+      return [162, 28, 175]; // fuchsia-700
+    case 'Libre / Sazón':
+      return [100, 116, 139]; // slate-500
+    default:
+      return [71, 85, 105]; // slate-600
+  }
+}
+
+export async function exportPlanToPdfNative(
   plan: GeneratedPlan,
   patientInfo: PatientInfo,
   macros: MacroNutrientSummary,
@@ -11,7 +56,7 @@ export function exportPlanToPdfNative(
   selectedOptions: Record<string, MealOptionLetter[] | string> = {},
   tableState?: TableGridState
 ) {
-  const doc = new jsPDF({
+  const doc = new JsPdfConstructor({
     orientation: 'portrait',
     unit: 'mm',
     format: 'a4',
@@ -55,7 +100,7 @@ export function exportPlanToPdfNative(
   doc.setTextColor(209, 250, 229); // emerald-100
   doc.text('Calculado bajo el Sistema Mexicano de Alimentos Equivalentes (SMAE 5ta Edición)', margin + 6, y + 18);
 
-  y += 30;
+  y += 26;
 
   // --- 2. Marco Clínico Superior: Expediente del Paciente y Tabla de Kcal/Macronutrientes ---
   const frameHeight = 33;
@@ -83,7 +128,7 @@ export function exportPlanToPdfNative(
   const leftX = margin + 4;
 
   // Datos del expediente
-  const patientDisplayName = patientInfo.name && patientInfo.name.trim() ? patientInfo.name.trim() : 'Plan Personalizado';
+  const patientDisplayName = cleanSpacing(patientInfo.name && patientInfo.name.trim() ? patientInfo.name.trim() : 'Plan Personalizado');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
@@ -108,14 +153,14 @@ export function exportPlanToPdfNative(
   doc.text(`Fecha de valoración: ${dateStr}`, leftX, y + 17.5);
 
   // Objetivo o Prescripción
-  const clinicalGoal = patientInfo.goal && patientInfo.goal.trim() ? patientInfo.goal.trim() : 'Mantenimiento y Prescripción Dietoterapéutica';
+  const clinicalGoal = cleanSpacing(patientInfo.goal && patientInfo.goal.trim() ? patientInfo.goal.trim() : 'Mantenimiento y Prescripción Dietoterapéutica');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(4, 120, 87); // emerald-700
   const splitGoal = doc.splitTextToSize(`Objetivo: ${clinicalGoal}`, leftBoxWidth - 8);
   doc.text(splitGoal[0], leftX, y + 23);
 
-  doc.setFont('helvetica', 'italic');
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.8);
   doc.setTextColor(100, 116, 139);
   doc.text('Prescripción bajo Sistema Mexicano de Equivalentes (SMAE)', leftX, y + 28.5);
@@ -190,22 +235,162 @@ export function exportPlanToPdfNative(
     rowY += 4.6;
   });
 
-  y += frameHeight + 3.5;
+  y += frameHeight + 3.0;
 
-  // --- 2.2 TABLA UNIFICADA: VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL ---
-  // Una sola tabla integral combinando Parámetros Antropométricos, Sumatoria de Pliegues y los 4 componentes
-  const unifiedTableHeight = 54;
-  checkPageBreak(unifiedTableHeight + 4);
+  // --- 2.2 CUADRO DE DISTRIBUCIÓN DE EQUIVALENTES (SMAE 5ª EDICIÓN) ---
+  // En la primera hoja manteniendo el formato, diseño y proporciones idéntico a Word
+  if (tableState) {
+    const allGroups = SMAE_GROUPS;
 
-  const bmiInfo = calculateBmiInfo(patientInfo.height, patientInfo.weight);
+    // Banner de Título del Cuadro de Equivalentes
+    doc.setFillColor(13, 49, 65); // #0d3141
+    doc.roundedRect(margin, y, contentWidth, 5.5, 1.5, 1.5, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text('CUADRO DE DISTRIBUCIÓN DE EQUIVALENTES (SMAE 5ª EDICIÓN)', margin + 3.5, y + 3.9);
+    y += 6.5;
+
+    // Dimensiones de Columnas: Ancho total = 182mm (Margen 14mm en hoja A4 de 210mm)
+    const colWGroup = 62;
+    const colWMeal = 16; // 5 tiempos de comida = 80mm
+    const colWEq = 20;
+    const colWKcal = 20; // 62 + 80 + 20 + 20 = 182mm
+
+    // Encabezado de la Tabla
+    doc.setFillColor(241, 245, 249); // slate-100
+    doc.setDrawColor(203, 213, 225); // slate-300
+    doc.rect(margin, y, contentWidth, 4.6, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7);
+    doc.setTextColor(15, 23, 42);
+
+    let curX = margin;
+    doc.text('Grupo de Alimento', curX + 2, y + 3.3);
+    curX += colWGroup;
+
+    const mealHeaders = ['Desayuno', 'Col. 1', 'Comida', 'Col. 2', 'Cena'];
+    mealHeaders.forEach((mh) => {
+      doc.text(mh, curX + colWMeal / 2, y + 3.3, { align: 'center' });
+      curX += colWMeal;
+    });
+
+    doc.text('Total Eq.', curX + colWEq / 2, y + 3.3, { align: 'center' });
+    curX += colWEq;
+    doc.text('Kcal', curX + colWKcal / 2, y + 3.3, { align: 'center' });
+
+    y += 4.6;
+
+    // Filas de los 17 Grupos Oficiales SMAE (proporción compacta de 3.8mm por fila)
+    allGroups.forEach((group, idx) => {
+      const rowTotal = calculateRowTotal(group.id, tableState);
+      const groupKcal = Math.round(rowTotal * group.kcal);
+      const isEven = idx % 2 === 0;
+
+      if (isEven) {
+        doc.setFillColor(255, 255, 255);
+      } else {
+        doc.setFillColor(248, 250, 252); // slate-50
+      }
+      doc.setDrawColor(226, 232, 240); // slate-200
+      doc.rect(margin, y, contentWidth, 3.8, 'FD');
+
+      let rowX = margin;
+
+      // Nombre del Grupo SMAE ajustado con precisión
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.4);
+      doc.setTextColor(30, 41, 59);
+
+      const splitName = doc.splitTextToSize(group.name, colWGroup - 4);
+      if (splitName.length > 1) {
+        doc.setFontSize(5.6);
+        doc.text(splitName[0], rowX + 2, y + 1.8);
+        doc.text(splitName[1], rowX + 2, y + 3.3);
+      } else {
+        doc.text(splitName[0], rowX + 2, y + 2.7);
+      }
+      rowX += colWGroup;
+
+      // 5 Tiempos de Comida
+      MEAL_COLUMNS.forEach((col) => {
+        const val = tableState[group.id]?.[col.key] || 0;
+        doc.setFont('helvetica', val > 0 ? 'bold' : 'normal');
+        doc.setFontSize(6.6);
+        doc.setTextColor(val > 0 ? 6 : 148, val > 0 ? 95 : 163, val > 0 ? 70 : 184); // emerald-700 o slate-400
+        doc.text(val > 0 ? `${val}` : '-', rowX + colWMeal / 2, y + 2.7, { align: 'center' });
+        rowX += colWMeal;
+      });
+
+      // Total de Equivalentes de la fila
+      doc.setFont('helvetica', rowTotal > 0 ? 'bold' : 'normal');
+      doc.setFontSize(6.6);
+      doc.setTextColor(rowTotal > 0 ? 6 : 148, rowTotal > 0 ? 95 : 163, rowTotal > 0 ? 70 : 184);
+      doc.text(rowTotal > 0 ? `${rowTotal}` : '0', rowX + colWEq / 2, y + 2.7, { align: 'center' });
+      rowX += colWEq;
+
+      // Kcal de la fila
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.4);
+      doc.setTextColor(groupKcal > 0 ? 71 : 148, groupKcal > 0 ? 85 : 163, groupKcal > 0 ? 105 : 184);
+      doc.text(groupKcal > 0 ? `${groupKcal}` : '-', rowX + colWKcal / 2, y + 2.7, { align: 'center' });
+
+      y += 3.8;
+    });
+
+    // Fila de Totales Generales
+    doc.setFillColor(13, 49, 65); // #0d3141
+    doc.rect(margin, y, contentWidth, 4.8, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.setTextColor(255, 255, 255);
+
+    let totX = margin;
+    doc.text('TOTAL POR COMIDA', totX + 2, y + 3.4);
+    totX += colWGroup;
+
+    MEAL_COLUMNS.forEach((col) => {
+      const colTotal = calculateColumnTotal(col.key, tableState);
+      doc.text(`${colTotal}`, totX + colWMeal / 2, y + 3.4, { align: 'center' });
+      totX += colWMeal;
+    });
+
+    const grandTotalEq = calculateGrandTotalEquivalents(tableState);
+    doc.setTextColor(253, 224, 71); // amber-300
+    doc.text(`${grandTotalEq} eq`, totX + colWEq / 2, y + 3.4, { align: 'center' });
+    totX += colWEq;
+
+    doc.setTextColor(255, 255, 255);
+    doc.text(`${Math.round(macros.totalKcal)}`, totX + colWKcal / 2, y + 3.4, { align: 'center' });
+
+    y += 4.8 + 3.5;
+  }
+
+  // --- 2.3 TABLA UNIFICADA: VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL ---
+  const somatotype = calculateHeathCarterSomatotype(patientInfo);
   const skinfoldSums = calculateSkinfoldSums(patientInfo.skinfolds);
-  const displayHeight = patientInfo.height
-    ? /\d$/.test(patientInfo.height.trim())
-      ? parseFloat(patientInfo.height) > 3
-        ? `${patientInfo.height.trim()} cm`
-        : `${patientInfo.height.trim()} m`
-      : patientInfo.height
-    : '—';
+  const hasAnthropoOrSomato = Boolean(
+    patientInfo.weight ||
+    patientInfo.height ||
+    patientInfo.fatPercent ||
+    patientInfo.musclePercent ||
+    skinfoldSums.sum6 ||
+    somatotype.hasAnyData
+  );
+
+  if (hasAnthropoOrSomato) {
+    const unifiedTableHeight = 54;
+    checkPageBreak(unifiedTableHeight + 2.5);
+
+    const bmiInfo = calculateBmiInfo(patientInfo.height, patientInfo.weight);
+    const displayHeight = patientInfo.height
+      ? /\d$/.test(patientInfo.height.trim())
+        ? parseFloat(patientInfo.height) > 3
+          ? `${patientInfo.height.trim()} cm`
+          : `${patientInfo.height.trim()} m`
+        : patientInfo.height
+      : '—';
 
   // Contenedor principal de la tabla unificada
   doc.setFillColor(255, 255, 255);
@@ -300,7 +485,7 @@ export function exportPlanToPdfNative(
   doc.setTextColor(6, 95, 70); // emerald-800
   doc.text('SUMATORIA DE Σ3 PLIEGUES (mm)', col3X + 6.5, y + 25.8);
 
-  doc.setFont('helvetica', 'italic');
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(5.8);
   doc.setTextColor(100, 116, 139); // slate-500
   doc.text('Subescapular + Supraespinal + Abdominal', col3X + 6.5, y + 29.5);
@@ -333,7 +518,7 @@ export function exportPlanToPdfNative(
   doc.setTextColor(15, 118, 110); // teal-700
   doc.text('SUMATORIA DE Σ6 PLIEGUES (mm)', col6X + 6.5, y + 25.8);
 
-  doc.setFont('helvetica', 'italic');
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(5.8);
   doc.setTextColor(100, 116, 139);
   doc.text('Tríceps + Subescapular + Supraespinal + Abdominal + Muslo Frontal + Pantorrilla Medial', col6X + 6.5, y + 29.5);
@@ -451,13 +636,149 @@ export function exportPlanToPdfNative(
     doc.text(c.kg, colX + 3.5 + kgLabelW + 1.5, y + 50.0);
   });
 
-  y += unifiedTableHeight + 3.5;
+  y += unifiedTableHeight + 2.5;
+
+  // --- 2.25 Somatotipo (Método Heath-Carter) ---
+  if (somatotype.hasAnyData) {
+    let somatoPng = '';
+    try {
+      somatoPng = await getSomatocartaPngDataUrl(somatotype, 600);
+    } catch (e) {
+      console.error('Error generating Somatocarta PNG for PDF:', e);
+    }
+
+    const hasImg = !!somatoPng;
+    const somatoH = hasImg ? 50 : (somatotype.classification ? 32 : 18);
+    checkPageBreak(somatoH + 2.5);
+
+    doc.setFillColor(248, 250, 252); // slate-50
+    doc.setDrawColor(203, 213, 225); // slate-300
+    doc.setLineWidth(0.3);
+    doc.roundedRect(margin, y, contentWidth, somatoH, 1.5, 1.5, 'FD');
+
+    // Barra de título del Somatotipo (sin la palabra ISAK ni somatograma.jpg)
+    doc.setFillColor(67, 56, 202); // indigo-700
+    doc.roundedRect(margin, y, contentWidth, 4.5, 1.5, 1.5, 'F');
+    doc.rect(margin, y + 2, contentWidth, 2.5, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.8);
+    doc.setTextColor(255, 255, 255);
+    doc.text('SOMATOTIPO (MÉTODO HEATH-CARTER)', margin + 3.5, y + 3.2);
+
+    if (somatotype.x !== null && somatotype.y !== null) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.2);
+      doc.setTextColor(224, 231, 255); // indigo-100
+      const coordStr = `Somatocarta: X = ${somatotype.x.toFixed(1)} | Y = ${somatotype.y.toFixed(1)}`;
+      doc.text(coordStr, margin + contentWidth - 3.5, y + 3.2, { align: 'right' });
+    }
+
+    if (hasImg) {
+      // Imagen de la Somatocarta a la izquierda
+      const imgSize = 40; // 40mm x 40mm
+      try {
+        doc.addImage(somatoPng, 'PNG', margin + 3, y + 6.5, imgSize, imgSize);
+        doc.setDrawColor(203, 213, 225);
+        doc.setLineWidth(0.2);
+        doc.roundedRect(margin + 2.5, y + 6, imgSize + 1, imgSize + 1, 1, 1, 'S');
+      } catch (imgErr) {
+        console.warn('Could not render somatocarta image in PDF:', imgErr);
+      }
+
+      // Columna derecha con estructura idéntica al ejemplo requerido:
+      // 1. Endomorfia: X.X     |    2. Mesomorfia: Y.Y    |   3. Ectomorfia: Z.Z
+      // Clasificación: Nombre (X.X - Y.Y - Z.Z)
+      // Interpretación funcional: Descripción
+      // "Frase descriptiva oficial según escalas Heath-Carter (somatotipo.pdf)"
+      const rightX = margin + imgSize + 7;
+      const rightW = contentWidth - (imgSize + 10);
+
+      // Fila 1: Componentes
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(180, 83, 9); // amber-700
+      doc.text(`1. Endomorfia: ${somatotype.endoFormatted}`, rightX, y + 10.5);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text('|', rightX + 38, y + 10.5);
+      doc.setTextColor(3, 105, 161); // sky-700
+      doc.text(`2. Mesomorfia: ${somatotype.mesoFormatted}`, rightX + 44, y + 10.5);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text('|', rightX + 82, y + 10.5);
+      doc.setTextColor(126, 34, 206); // purple-700
+      doc.text(`3. Ectomorfia: ${somatotype.ectoFormatted}`, rightX + 88, y + 10.5);
+
+      // Fila 2: Clasificación (formato exacto solicitado)
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.8);
+      doc.setTextColor(67, 56, 202);
+      doc.text('Clasificación:', rightX, y + 18.0);
+
+      doc.setTextColor(15, 23, 42);
+      const classText = somatotype.classification ? somatotype.classification.name : 'Pendiente de cálculo';
+      doc.text(`${classText} (${somatotype.endoFormatted} - ${somatotype.mesoFormatted} - ${somatotype.ectoFormatted})`, rightX + 22, y + 18.0);
+
+      // Fila 3: Interpretación funcional
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.0);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Interpretación funcional:', rightX, y + 24.5);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.4);
+      doc.setTextColor(71, 85, 105);
+      const interpDesc = somatotype.classification?.description || 'Complete las mediciones antropométricas para obtener la interpretación funcional.';
+      const splitInterp = doc.splitTextToSize(interpDesc, rightW);
+      doc.text(splitInterp, rightX, y + 28.5);
+
+      // Fila 4: Frase de escalas (somatotipo.pdf)
+      if (somatotype.scaleSummaryText) {
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(6.4);
+        doc.setTextColor(30, 41, 59);
+        const splitScale = doc.splitTextToSize(`"${somatotype.scaleSummaryText}"`, rightW);
+        const scaleY = y + 28.5 + (splitInterp.length * 3.2) + 2.5;
+        doc.text(splitScale, rightX, Math.min(y + somatoH - 4, scaleY));
+      }
+    } else {
+      // Fallback sin imagen: Formato exacto requerido
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.8);
+      doc.setTextColor(30, 41, 59);
+      doc.text(`1. Endomorfia: ${somatotype.endoFormatted}     |    2. Mesomorfia: ${somatotype.mesoFormatted}    |   3. Ectomorfia: ${somatotype.ectoFormatted}`, margin + 3.5, y + 9.5);
+
+      if (somatotype.classification) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.8);
+        doc.setTextColor(67, 56, 202);
+        doc.text(`Clasificación: ${somatotype.classification.name} (${somatotype.endoFormatted} - ${somatotype.mesoFormatted} - ${somatotype.ectoFormatted})`, margin + 3.5, y + 16);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7.0);
+        doc.setTextColor(15, 23, 42);
+        doc.text('Interpretación funcional: ', margin + 3.5, y + 21.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(71, 85, 105);
+        doc.text(somatotype.classification.description, margin + 34, y + 21.5);
+
+        if (somatotype.scaleSummaryText) {
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(6.8);
+          doc.setTextColor(30, 41, 59);
+          doc.text(`"${somatotype.scaleSummaryText}"`, margin + 3.5, y + 27.5);
+        }
+      }
+    }
+
+    y += somatoH + 2.5;
+  }
+}
 
   // --- 2.3 Notas e Indicaciones Generales del Paciente ---
   // Se imprime en el PDF ÚNICAMENTE si el usuario ingresó información en este cuadro
   const userNotes = patientInfo.notes?.trim();
   if (userNotes) {
-    doc.setFont('helvetica', 'italic');
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     const splitNotes = doc.splitTextToSize(`Indicaciones y notas del paciente: ${userNotes}`, contentWidth - 8);
     const boxHeight = Math.max(12, splitNotes.length * 4 + 6);
@@ -473,147 +794,9 @@ export function exportPlanToPdfNative(
     y += boxHeight + 4;
   }
 
-  // --- 2.5 Cuadro de Distribución de Equivalentes ---
-  if (tableState) {
-    const allGroups = SMAE_GROUPS;
-    checkPageBreak(35);
-
-    // Section Title Banner
-    doc.setFillColor(13, 49, 65); // #0d3141
-    doc.roundedRect(margin, y, contentWidth, 8, 1.5, 1.5, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(255, 255, 255);
-    doc.text('CUADRO DE DISTRIBUCIÓN DE EQUIVALENTES', margin + 4, y + 5.2);
-    y += 10;
-
-    // Table Column Dimensions: total width = 182
-    const colWGroup = 62;
-    const colWMeal = 16; // 5 meals = 80
-    const colWEq = 20;
-    const colWKcal = 20; // 62 + 80 + 20 + 20 = 182
-
-    const drawTableHeader = () => {
-      doc.setFillColor(241, 245, 249); // slate-100
-      doc.setDrawColor(203, 213, 225); // slate-300
-      doc.rect(margin, y, contentWidth, 6, 'FD');
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(7.5);
-      doc.setTextColor(15, 23, 42);
-
-      let curX = margin;
-      doc.text('Grupo de Alimento', curX + 2, y + 4.2);
-      curX += colWGroup;
-
-      const mealHeaders = ['Desayuno', 'Col. 1', 'Comida', 'Col. 2', 'Cena'];
-      mealHeaders.forEach((mh) => {
-        doc.text(mh, curX + colWMeal / 2, y + 4.2, { align: 'center' });
-        curX += colWMeal;
-      });
-
-      doc.text('Total Eq.', curX + colWEq / 2, y + 4.2, { align: 'center' });
-      curX += colWEq;
-      doc.text('Kcal', curX + colWKcal / 2, y + 4.2, { align: 'center' });
-
-      y += 6;
-    };
-
-    // Header Row
-    checkPageBreak(12);
-    drawTableHeader();
-
-    // Table Rows: all 17 SMAE groups
-    allGroups.forEach((group, idx) => {
-      if (y + 6 > pageHeight - margin - 10) {
-        doc.addPage();
-        y = margin;
-        drawTableHeader();
-      }
-
-      const rowTotal = calculateRowTotal(group.id, tableState);
-      const groupKcal = Math.round(rowTotal * group.kcal);
-      const isEven = idx % 2 === 0;
-
-      if (isEven) {
-        doc.setFillColor(255, 255, 255);
-      } else {
-        doc.setFillColor(248, 250, 252); // slate-50
-      }
-      doc.setDrawColor(226, 232, 240); // slate-200
-      doc.rect(margin, y, contentWidth, 5.2, 'FD');
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(30, 41, 59);
-
-      let rowX = margin;
-      // Group Name: full name adjusted to fit column without truncation
-      const splitName = doc.splitTextToSize(group.name, colWGroup - 4);
-      if (splitName.length > 1) {
-        doc.setFontSize(6.2);
-        doc.text(splitName[0], rowX + 2, y + 2.3);
-        doc.text(splitName[1], rowX + 2, y + 4.5);
-      } else {
-        doc.setFontSize(7.2);
-        doc.text(splitName[0], rowX + 2, y + 3.7);
-      }
-      rowX += colWGroup;
-
-      // 5 Meals
-      MEAL_COLUMNS.forEach((col) => {
-        const val = tableState[group.id]?.[col.key] || 0;
-        doc.setFont('helvetica', val > 0 ? 'bold' : 'normal');
-        doc.setTextColor(val > 0 ? 6 : 148, val > 0 ? 78 : 163, val > 0 ? 59 : 184); // emerald-800 or slate-400
-        doc.text(val > 0 ? `${val}` : '-', rowX + colWMeal / 2, y + 3.7, { align: 'center' });
-        rowX += colWMeal;
-      });
-
-      // Row Total Eq
-      doc.setFont('helvetica', rowTotal > 0 ? 'bold' : 'normal');
-      doc.setTextColor(rowTotal > 0 ? 6 : 148, rowTotal > 0 ? 78 : 163, rowTotal > 0 ? 59 : 184);
-      doc.text(rowTotal > 0 ? `${rowTotal}` : '0', rowX + colWEq / 2, y + 3.7, { align: 'center' });
-      rowX += colWEq;
-
-      // Kcal
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(groupKcal > 0 ? 71 : 148, groupKcal > 0 ? 85 : 163, groupKcal > 0 ? 105 : 184);
-      doc.text(groupKcal > 0 ? `${groupKcal}` : '-', rowX + colWKcal / 2, y + 3.7, { align: 'center' });
-
-      y += 5.2;
-    });
-
-    // Total Row
-    if (y + 7 > pageHeight - margin - 10) {
-      doc.addPage();
-      y = margin;
-    }
-    doc.setFillColor(13, 49, 65); // #0d3141
-    doc.rect(margin, y, contentWidth, 6, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(255, 255, 255);
-
-    let totX = margin;
-    doc.text('TOTAL POR COMIDA', totX + 2, y + 4.2);
-    totX += colWGroup;
-
-    MEAL_COLUMNS.forEach((col) => {
-      const colTotal = calculateColumnTotal(col.key, tableState);
-      doc.text(`${colTotal}`, totX + colWMeal / 2, y + 4.2, { align: 'center' });
-      totX += colWMeal;
-    });
-
-    const grandTotalEq = calculateGrandTotalEquivalents(tableState);
-    doc.setTextColor(253, 224, 71); // amber-300
-    doc.text(`${grandTotalEq} eq`, totX + colWEq / 2, y + 4.2, { align: 'center' });
-    totX += colWEq;
-
-    doc.setTextColor(255, 255, 255);
-    doc.text(`${Math.round(macros.totalKcal)}`, totX + colWKcal / 2, y + 4.2, { align: 'center' });
-
-    y += 10;
-  }
+  // Salto de página para que los menús y recetas de cada tiempo de comida comiencen nítidamente en la hoja 2
+  doc.addPage();
+  y = margin;
 
   // --- 3. Render Meal Times ---
   plan.meals.forEach((meal, idx) => {
@@ -649,80 +832,233 @@ export function exportPlanToPdfNative(
     checkPageBreak(40);
 
     // Meal Header
+    const mealNameUpper = meal.mealName.toUpperCase();
+    let mealTitleFontSize = 12;
+    if (mealNameUpper.length > 35) {
+      mealTitleFontSize = 9.5;
+    } else if (mealNameUpper.length > 22) {
+      mealTitleFontSize = 10.5;
+    }
+
     doc.setFillColor(13, 49, 65); // pantone #0d3141
     doc.roundedRect(margin, y, contentWidth, 9, 1.5, 1.5, 'F');
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
+    doc.setFontSize(mealTitleFontSize);
     doc.setTextColor(255, 255, 255);
-    doc.text(`${meal.mealName.toUpperCase()}`, margin + 4, y + 6.5);
+    doc.text(mealNameUpper, margin + 4, y + 6.2);
 
-    y += 13;
+    y += 12;
 
-    // Render Option A, B, and C
+    // Render Options A, B, C
     const renderOption = (option: typeof meal.optionA, letter: 'A' | 'B' | 'C') => {
-      checkPageBreak(30);
-
       const isA = letter === 'A';
       const isB = letter === 'B';
-      // Colors: A = emerald-50, B = teal-50, C = sky-50
-      if (isA) {
-        doc.setFillColor(240, 253, 244);
-        doc.setDrawColor(167, 243, 208);
-      } else if (isB) {
-        doc.setFillColor(240, 253, 250);
-        doc.setDrawColor(153, 246, 228);
-      } else {
-        doc.setFillColor(240, 249, 255);
-        doc.setDrawColor(186, 230, 253);
+
+      // Title (cuidando el tamaño de letra si el título de la comida es largo y quitando espacios raros)
+      const rawTitle = cleanSpacing(option.title || 'Menú sugerido');
+      const titleFull = `OPCIÓN ${letter}: ${rawTitle}`;
+      let titleFontSize = 11;
+      if (titleFull.length > 70) {
+        titleFontSize = 8.5;
+      } else if (titleFull.length > 50) {
+        titleFontSize = 9.5;
+      } else if (titleFull.length > 35) {
+        titleFontSize = 10.5;
       }
-      doc.setLineWidth(0.2);
 
-      // Title
+      const maxInnerW = contentWidth - 10; // Margen interno estricto (5mm a cada lado)
+      const cardInnerX = margin + 5;
+
+      // 1. Título
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
+      doc.setFontSize(titleFontSize);
+      const splitTitle = doc.splitTextToSize(titleFull, maxInnerW);
+      const titleLineH = titleFontSize * 0.36 + 1.2;
+      const titleHeight = splitTitle.length * titleLineH;
+
+      // 2. Descripción (sin cursiva)
+      let descHeight = 0;
+      let splitDesc: string[] = [];
+      if (option.description) {
+        const cleanDesc = cleanSpacing(option.description);
+        if (cleanDesc) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8.5);
+          splitDesc = doc.splitTextToSize(`"${cleanDesc}"`, maxInnerW);
+          descHeight = splitDesc.length * 3.6 + 1.5;
+        }
+      }
+
+      // 3. Pre-cálculo exacto de ingredientes con ajuste de renglones para que nada se salga del marco ni se sobreponga
+      let ingTotalHeight = 0;
+      const formattedIngredients = (option.ingredients || []).map((ing) => {
+        const displayPortion = cleanSpacing(parseAndScalePortion(ing.exactPortion, ing.equivalentsCount));
+        const trueGroup = ing.smaeGroup || detectTrueSMAEGroup(ing.foodName);
+        const groupBadge = getGroupBadgeConfig(trueGroup);
+        const role = ing.role || detectIngredientRole(ing.foodName, trueGroup);
+        const isFree = groupBadge.shortName === 'Libre / Sazón' || (Number(ing.equivalentsCount) || 0) === 0;
+
+        let roleTag = '';
+        if (role === 'coccion') roleTag = ' (Cocción)';
+        else if (role === 'topping') roleTag = ' (Topping)';
+        else if (role === 'sazon') roleTag = ' (Sazón)';
+
+        const eqText = !isFree && ing.equivalentsCount ? ` · ${ing.equivalentsCount} eq` : '';
+        const groupTag = `[${groupBadge.shortName}${roleTag}${eqText}]`;
+        const prefTag = ing.isPreferred ? ' ★' : '';
+        const foodNameClean = `${cleanSpacing(ing.foodName)}${prefTag}`;
+
+        const portionPart = displayPortion ? `${displayPortion} ` : '';
+        const fullFoodText = `${portionPart}${foodNameClean}  ${groupTag}`.trim();
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.8);
+        const bulletIndent = 4.0;
+        const textAvailW = maxInnerW - bulletIndent;
+        const splitLines: string[] = doc.splitTextToSize(fullFoodText, textAvailW);
+
+        const itemH = splitLines.length * 4.0 + 0.6;
+        ingTotalHeight += itemH;
+
+        return {
+          splitLines,
+          bulletIndent,
+          itemH,
+        };
+      });
+
+      // 4. Preparación (sin cursiva)
+      let prepHeight = 0;
+      let splitPrep: string[] = [];
+      if (option.preparation) {
+        const cleanPrep = cleanSpacing(option.preparation);
+        if (cleanPrep) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8.5);
+          splitPrep = doc.splitTextToSize(`Preparación: ${cleanPrep}`, maxInnerW);
+          prepHeight = splitPrep.length * 3.6 + 2.0;
+        }
+      }
+
+      // 5. Tip (sin cursiva)
+      let tipHeight = 0;
+      let splitTip: string[] = [];
+      if (option.nutritionistTip) {
+        const cleanTip = cleanSpacing(option.nutritionistTip);
+        if (cleanTip) {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8);
+          splitTip = doc.splitTextToSize(`Tip: ${cleanTip}`, maxInnerW);
+          tipHeight = splitTip.length * 3.4 + 2.0;
+        }
+      }
+
+      const cardPaddingTop = 4.0;
+      const cardPaddingBottom = 4.0;
+      const totalCardHeight = Math.max(
+        18,
+        cardPaddingTop + titleHeight + descHeight + ingTotalHeight + prepHeight + tipHeight + cardPaddingBottom
+      );
+
+      // Control de salto de página antes de dibujar la tarjeta
+      if (totalCardHeight < pageHeight - 35) {
+        checkPageBreak(totalCardHeight + 2);
+      } else {
+        checkPageBreak(30);
+      }
+
+      const cardStartY = y;
+
+      // Tarjeta contenedora con fondo suave idéntica al archivo Word
+      if (isA) {
+        doc.setFillColor(240, 253, 244); // emerald-50
+        doc.setDrawColor(167, 243, 208); // emerald-200
+      } else if (isB) {
+        doc.setFillColor(240, 253, 250); // teal-50
+        doc.setDrawColor(153, 246, 228); // teal-200
+      } else {
+        doc.setFillColor(240, 249, 255); // sky-50
+        doc.setDrawColor(186, 230, 253); // sky-200
+      }
+      doc.setLineWidth(0.25);
+      doc.roundedRect(margin, cardStartY, contentWidth, totalCardHeight, 1.5, 1.5, 'FD');
+
+      // Línea de acento lateral izquierda distintiva
+      if (isA) doc.setFillColor(5, 150, 105); // emerald-600
+      else if (isB) doc.setFillColor(13, 148, 136); // teal-600
+      else doc.setFillColor(2, 132, 199); // sky-600
+      doc.roundedRect(margin, cardStartY, 2.0, totalCardHeight, 0.8, 0.8, 'F');
+
+      y += cardPaddingTop;
+
+      // Título de la opción
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(titleFontSize);
       doc.setTextColor(13, 49, 65); // pantone #0d3141
-      doc.text(`OPCIÓN ${letter}: ${option.title || 'Menú sugerido'}`, margin + 2, y + 4);
-      y += 8;
+      splitTitle.forEach((tLine) => {
+        doc.text(tLine, cardInnerX, y);
+        y += titleLineH;
+      });
+      y += 1.0;
 
-      // Ingredients
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10.5);
-      doc.setTextColor(30, 41, 59);
+      // Descripción (sin cursiva)
+      if (splitDesc.length > 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        splitDesc.forEach((dLine) => {
+          doc.text(dLine, cardInnerX, y);
+          y += 3.6;
+        });
+        y += 1.0;
+      }
 
-      if (option.ingredients && option.ingredients.length > 0) {
-        option.ingredients.forEach((ing) => {
-          checkPageBreak(6);
-          const eqLabel = ing.smaeGroup ? ` (${ing.equivalentsCount} eq ${ing.smaeGroup})` : '';
-          const ingText = `  •  ${ing.exactPortion} ${ing.foodName}${eqLabel}`;
-          const splitIng = doc.splitTextToSize(ingText, contentWidth - 6);
-          doc.text(splitIng, margin + 3, y);
-          y += splitIng.length * 4.8;
+      // Ingredientes
+      if (formattedIngredients.length > 0) {
+        formattedIngredients.forEach((item) => {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(8.8);
+          doc.setTextColor(5, 150, 105); // emerald-600 bullet
+          doc.text('•', cardInnerX, y);
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(8.8);
+          doc.setTextColor(15, 23, 42); // slate-900
+
+          item.splitLines.forEach((lineText) => {
+            doc.text(lineText, cardInnerX + item.bulletIndent, y);
+            y += 4.0;
+          });
+          y += 0.6;
         });
       }
 
-      // Preparation
-      if (option.preparation) {
-        checkPageBreak(12);
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(10);
-        doc.setTextColor(71, 85, 105);
-        const splitPrep = doc.splitTextToSize(`Preparación: ${option.preparation}`, contentWidth - 8);
-        doc.text(splitPrep, margin + 4, y);
-        y += splitPrep.length * 4.5 + 2;
-      }
-
-      // Tip
-      if (option.nutritionistTip) {
-        checkPageBreak(10);
+      // Preparación (sin cursiva)
+      if (splitPrep.length > 0) {
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9.5);
-        doc.setTextColor(180, 83, 9); // amber-700
-        const splitTip = doc.splitTextToSize(`Tip: ${option.nutritionistTip}`, contentWidth - 8);
-        doc.text(splitTip, margin + 4, y);
-        y += splitTip.length * 4.5 + 2;
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        splitPrep.forEach((pLine) => {
+          doc.text(pLine, cardInnerX, y);
+          y += 3.6;
+        });
+        y += 1.5;
       }
 
-      y += 1.5;
+      // Tip (sin cursiva)
+      if (splitTip.length > 0) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(180, 83, 9); // amber-700
+        splitTip.forEach((tLine) => {
+          doc.text(tLine, cardInnerX, y);
+          y += 3.4;
+        });
+        y += 1.5;
+      }
+
+      // Espaciado final al término de la tarjeta
+      y = cardStartY + totalCardHeight + 3.2;
     };
 
     const currentSelection = normalizeOptionSelection(selectedOptions[meal.mealName]);
@@ -748,8 +1084,26 @@ export function exportPlanToPdfNative(
     doc.setFontSize(9);
     doc.setTextColor(148, 163, 184); // slate-400
     doc.text('Generado por Sistema Nutricional SMAE Pro 5ta Edición', margin, pageHeight - 8);
-    doc.text(`Página ${i} de ${totalPages}`, pageWidth - margin - 20, pageHeight - 8);
+    doc.text(`Página ${i} de ${totalPages}`, pageWidth - margin, pageHeight - 8, { align: 'right' });
   }
 
-  doc.save(fileName);
+  try {
+    const pdfBlob = doc.output('blob');
+    const blobUrl = URL.createObjectURL(pdfBlob);
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = fileName;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(() => {
+      if (anchor.parentNode) {
+        document.body.removeChild(anchor);
+      }
+      URL.revokeObjectURL(blobUrl);
+    }, 2500);
+  } catch (saveErr) {
+    console.warn('Direct Blob download failed, falling back to doc.save:', saveErr);
+    doc.save(fileName);
+  }
 }

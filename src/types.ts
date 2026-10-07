@@ -28,6 +28,8 @@ export interface SMAEIngredient {
   equivalentsCount: number;
   netGrams?: number;
   preparationNotes?: string;
+  isPreferred?: boolean;
+  role?: 'coccion' | 'topping' | 'sazon' | 'principal' | 'guarnicion';
 }
 
 export interface MenuOption {
@@ -97,6 +99,40 @@ export interface BreadthMeasurements {
   femoral?: string;
 }
 
+export interface SomatotypeData {
+  endomorphy: number;
+  mesomorphy: number;
+  ectomorphy: number;
+  classification: string;
+  categoryDescription?: string;
+  x: number;
+  y: number;
+  isComplete: boolean;
+}
+
+export interface ManualNutrientEntry {
+  enabled: boolean;
+  name?: string;
+  proteinGrams?: number | string;
+  kcal?: number | string;
+  lipidsGrams?: number | string;
+  carbsGrams?: number | string;
+  timing?: 'desayuno' | 'colacion1' | 'comida' | 'colacion2' | 'cena' | 'any';
+  includeInMenu: boolean;
+  notes?: string;
+}
+
+export interface ProteinSupplementInfo {
+  enabled: boolean;
+  brandOrType?: string; // ej. "Proteína de suero de leche (Whey Isolate / Concentrate)"
+  scoops?: number; // ej. 1 medida
+  proteinGramsPerServing?: number; // ej. 24 o 25g
+  totalProteinGrams?: number; // scoops * proteinGramsPerServing
+  timing?: 'desayuno' | 'colacion1' | 'comida' | 'colacion2' | 'cena' | 'post-entreno' | 'any';
+  includeInMenu: boolean; // Contabilizar e incorporar en el menú generado por IA
+  notes?: string;
+}
+
 export interface PatientInfo {
   name: string;
   date: string;
@@ -121,9 +157,35 @@ export interface PatientInfo {
   sumSkinfold6?: string;
   girths?: GirthMeasurements;
   breadths?: BreadthMeasurements;
+  // Somatotipo ISAK (Heath-Carter)
+  somatotype?: SomatotypeData;
   preferredFoods?: string;
   dislikedFoods?: string;
   mealPreferences?: MealPreferences;
+  // Aporte manual de nutrientes (Proteína, Kcal, Lípidos, HC)
+  manualNutrientEntry?: ManualNutrientEntry;
+  // Suplemento de proteína (Suero de leche / Whey Protein)
+  proteinSupplement?: ProteinSupplementInfo;
+  // Conteo calórico y gasto energético
+  caloricFormula?: 'harris-benedict' | 'mifflin-st-jeor' | 'katch-mcardle' | 'cunningham' | 'none';
+  activityFactor?: number;
+  weightStrategy?: 'real' | 'ideal' | 'adjusted';
+  customCaloricTarget?: number;
+  caloricAdjustment?: number;
+  // Prescripción y distribución manual de macronutrientes
+  macroPrescription?: ManualMacroPrescription;
+}
+
+export interface ManualMacroPrescription {
+  enabled: boolean;
+  targetKcal?: number;
+  caloricAdjustment?: number;
+  proteinPercent: number;
+  lipidsPercent: number;
+  carbsPercent: number;
+  proteinGPerKg?: number;
+  proteinBaseWeight?: 'real' | 'ideal' | 'lean' | 'adjusted';
+  targetProteinGrams?: number;
 }
 
 export interface MacroNutrientSummary {
