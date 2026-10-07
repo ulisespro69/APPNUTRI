@@ -148,48 +148,58 @@ export async function exportPlanToWord(
   const carbsKcal = Math.round(macros.totalCarbsGrams * 4);
 
   const patientDisplayName = cleanSpacing(patientInfo.name && patientInfo.name.trim() ? patientInfo.name.trim() : 'Plan Personalizado');
-  const clinicalGoal = cleanSpacing(patientInfo.goal && patientInfo.goal.trim() ? patientInfo.goal.trim() : 'Mantenimiento y Prescripción Dietoterapéutica');
+  const hasUserGoal = Boolean(patientInfo.goal && patientInfo.goal.trim());
+
+  const patientLeftChildren: Paragraph[] = [
+    new Paragraph({
+      children: [
+        new TextRun({ text: '  EXPEDIENTE CLÍNICO DEL PACIENTE', bold: true, size: 16, color: 'FFFFFF', font: 'Helvetica' }),
+      ],
+      shading: { fill: '0F172A', type: ShadingType.CLEAR },
+      spacing: { before: 40, after: 60 },
+    }),
+    new Paragraph({
+      spacing: { before: 20, after: 20 },
+      children: [
+        new TextRun({ text: '  Paciente: ', bold: true, size: 18, color: '0F172A', font: 'Helvetica' }),
+        new TextRun({ text: patientDisplayName, bold: true, size: 18, color: '0F172A', font: 'Helvetica' }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { before: 20, after: 20 },
+      children: [
+        new TextRun({ text: '  Fecha de valoración: ', size: 16, color: '475569', font: 'Helvetica' }),
+        new TextRun({ text: dateStr, size: 16, color: '475569', font: 'Helvetica' }),
+      ],
+    }),
+  ];
+
+  if (hasUserGoal) {
+    patientLeftChildren.push(
+      new Paragraph({
+        spacing: { before: 20, after: 20 },
+        children: [
+          new TextRun({ text: '  Objetivo: ', bold: true, size: 16, color: '047857', font: 'Helvetica' }),
+          new TextRun({ text: cleanSpacing(patientInfo.goal!.trim()), size: 16, color: '334155', font: 'Helvetica' }),
+        ],
+      })
+    );
+  }
+
+  patientLeftChildren.push(
+    new Paragraph({
+      spacing: { before: 20, after: 40 },
+      children: [
+        new TextRun({ text: '  Prescripción bajo Sistema Mexicano de Equivalentes (SMAE)', size: 14, color: '64748B', font: 'Helvetica' }),
+      ],
+    })
+  );
 
   const patientLeftCell = new TableCell({
     width: { size: 50, type: WidthType.PERCENTAGE },
     shading: { fill: 'FFFFFF', type: ShadingType.CLEAR },
     margins: { top: 0, bottom: 80, left: 0, right: 0 },
-    children: [
-      new Paragraph({
-        children: [
-          new TextRun({ text: '  EXPEDIENTE CLÍNICO DEL PACIENTE', bold: true, size: 16, color: 'FFFFFF', font: 'Helvetica' }),
-        ],
-        shading: { fill: '0F172A', type: ShadingType.CLEAR },
-        spacing: { before: 40, after: 60 },
-      }),
-      new Paragraph({
-        spacing: { before: 20, after: 20 },
-        children: [
-          new TextRun({ text: '  Paciente: ', bold: true, size: 18, color: '0F172A', font: 'Helvetica' }),
-          new TextRun({ text: patientDisplayName, bold: true, size: 18, color: '0F172A', font: 'Helvetica' }),
-        ],
-      }),
-      new Paragraph({
-        spacing: { before: 20, after: 20 },
-        children: [
-          new TextRun({ text: '  Fecha de valoración: ', size: 16, color: '475569', font: 'Helvetica' }),
-          new TextRun({ text: dateStr, size: 16, color: '475569', font: 'Helvetica' }),
-        ],
-      }),
-      new Paragraph({
-        spacing: { before: 20, after: 20 },
-        children: [
-          new TextRun({ text: '  Objetivo: ', bold: true, size: 16, color: '047857', font: 'Helvetica' }),
-          new TextRun({ text: clinicalGoal, size: 16, color: '334155', font: 'Helvetica' }),
-        ],
-      }),
-      new Paragraph({
-        spacing: { before: 20, after: 40 },
-        children: [
-          new TextRun({ text: '  Prescripción bajo Sistema Mexicano de Equivalentes (SMAE)', size: 14, color: '64748B', font: 'Helvetica' }),
-        ],
-      }),
-    ],
+    children: patientLeftChildren,
   });
 
   // Mini-tabla de Macronutrientes idéntica a la estructura del archivo PDF
@@ -651,180 +661,185 @@ export async function exportPlanToWord(
 
   // =========================================================================
   // 2.3 TABLA UNIFICADA: VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL
-  // Una sola tabla que unifica Estatura, Masa Corporal, Edad, IMC y los 4 componentes
+  // Se generan filas dinámicamente: solo se envían al documento las secciones que contienen datos
   // =========================================================================
-  const unifiedAnthropoCompTable = new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
-    borders: {
-      top: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
-      bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
-      left: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
-      right: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
-      insideHorizontal: { style: BorderStyle.SINGLE, size: 2, color: 'E2E8F0' },
-      insideVertical: { style: BorderStyle.SINGLE, size: 2, color: 'E2E8F0' },
-    },
-    rows: [
-      // Fila 1: Encabezado Principal
-      new TableRow({
-        children: [
-          new TableCell({
-            columnSpan: 20,
-            shading: { fill: '0F172A', type: ShadingType.CLEAR }, // slate-900
-            margins: { top: 80, bottom: 80, left: 140, right: 140 },
-            children: [
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: 'VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL (4 COMPONENTES)',
-                    bold: true,
-                    size: 18,
-                    color: 'FFFFFF',
-                    font: 'Helvetica',
-                  }),
-                ],
-              }),
-            ],
-          }),
-        ],
-      }),
+  const hasSkinfolds = (skinfoldSums.count6 || 0) > 0;
+  const hasComposition = Boolean(
+    patientInfo.fatPercent ||
+    patientInfo.musclePercent ||
+    patientInfo.bonePercent ||
+    patientInfo.residualPercent
+  );
 
-      // Fila 2: Parámetros Antropométricos (Sexo, Edad, Masa Corporal, Estatura, IMC)
-      new TableRow({
-        children: [
-          // Sexo
-          new TableCell({
-            columnSpan: 4,
-            width: { size: 20, type: WidthType.PERCENTAGE },
-            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-            margins: { top: 70, bottom: 70, left: 120, right: 120 },
-            children: [
-              new Paragraph({
-                children: [
-                  new TextRun({ text: 'SEXO', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { before: 20 },
-                children: [
-                  new TextRun({
-                    text: patientInfo.gender || '—',
-                    bold: true,
-                    size: 18,
-                    color: '0F172A',
-                    font: 'Helvetica',
-                  }),
-                ],
-              }),
-            ],
-          }),
-          // Edad
-          new TableCell({
-            columnSpan: 4,
-            width: { size: 20, type: WidthType.PERCENTAGE },
-            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-            margins: { top: 70, bottom: 70, left: 120, right: 120 },
-            children: [
-              new Paragraph({
-                children: [
-                  new TextRun({ text: 'EDAD', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { before: 20 },
-                children: [
-                  new TextRun({
-                    text: patientInfo.age ? `${patientInfo.age} años` : '—',
-                    bold: true,
-                    size: 18,
-                    color: '0F172A',
-                    font: 'Helvetica',
-                  }),
-                ],
-              }),
-            ],
-          }),
-          // Masa Corporal (Peso)
-          new TableCell({
-            columnSpan: 4,
-            width: { size: 20, type: WidthType.PERCENTAGE },
-            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-            margins: { top: 70, bottom: 70, left: 120, right: 120 },
-            children: [
-              new Paragraph({
-                children: [
-                  new TextRun({ text: 'MASA CORPORAL (PESO)', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { before: 20 },
-                children: [
-                  new TextRun({
-                    text: patientInfo.weight ? `${patientInfo.weight}` : '—',
-                    bold: true,
-                    size: 18,
-                    color: '0F172A',
-                    font: 'Helvetica',
-                  }),
-                ],
-              }),
-            ],
-          }),
-          // Estatura (Talla)
-          new TableCell({
-            columnSpan: 4,
-            width: { size: 20, type: WidthType.PERCENTAGE },
-            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-            margins: { top: 70, bottom: 70, left: 120, right: 120 },
-            children: [
-              new Paragraph({
-                children: [
-                  new TextRun({ text: 'ESTATURA (TALLA)', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { before: 20 },
-                children: [
-                  new TextRun({
-                    text: displayHeight,
-                    bold: true,
-                    size: 18,
-                    color: '0F172A',
-                    font: 'Helvetica',
-                  }),
-                ],
-              }),
-            ],
-          }),
-          // IMC
-          new TableCell({
-            columnSpan: 4,
-            width: { size: 20, type: WidthType.PERCENTAGE },
-            shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
-            margins: { top: 70, bottom: 70, left: 120, right: 120 },
-            children: [
-              new Paragraph({
-                children: [
-                  new TextRun({ text: 'ÍNDICE MASA CORP. (IMC)', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
-                ],
-              }),
-              new Paragraph({
-                spacing: { before: 20 },
-                children: [
-                  new TextRun({
-                    text: bmiInfo ? `${bmiInfo.formatted} (${bmiInfo.category})` : '—',
-                    bold: true,
-                    size: 17,
-                    color: '047857',
-                    font: 'Helvetica',
-                  }),
-                ],
-              }),
-            ],
-          }),
-        ],
-      }),
+  const anthropoTableRows: TableRow[] = [
+    // Fila 1: Encabezado Principal
+    new TableRow({
+      children: [
+        new TableCell({
+          columnSpan: 20,
+          shading: { fill: '0F172A', type: ShadingType.CLEAR }, // slate-900
+          margins: { top: 80, bottom: 80, left: 140, right: 140 },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: hasComposition
+                    ? 'VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL (4 COMPONENTES)'
+                    : hasSkinfolds
+                    ? 'VALORACIÓN ANTROPOMÉTRICA Y PLIEGUES CUTÁNEOS'
+                    : 'VALORACIÓN ANTROPOMÉTRICA GENERAL',
+                  bold: true,
+                  size: 18,
+                  color: 'FFFFFF',
+                  font: 'Helvetica',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }),
 
-      // Fila: Sub-encabezado de Sumatoria de Pliegues Cutáneos
+    // Fila 2: Parámetros Antropométricos (Sexo, Edad, Masa Corporal, Estatura, IMC)
+    new TableRow({
+      children: [
+        // Sexo
+        new TableCell({
+          columnSpan: 4,
+          width: { size: 20, type: WidthType.PERCENTAGE },
+          shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+          margins: { top: 70, bottom: 70, left: 120, right: 120 },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({ text: 'SEXO', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+              ],
+            }),
+            new Paragraph({
+              spacing: { before: 20 },
+              children: [
+                new TextRun({
+                  text: patientInfo.gender || '—',
+                  bold: true,
+                  size: 18,
+                  color: '0F172A',
+                  font: 'Helvetica',
+                }),
+              ],
+            }),
+          ],
+        }),
+        // Edad
+        new TableCell({
+          columnSpan: 4,
+          width: { size: 20, type: WidthType.PERCENTAGE },
+          shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+          margins: { top: 70, bottom: 70, left: 120, right: 120 },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({ text: 'EDAD', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+              ],
+            }),
+            new Paragraph({
+              spacing: { before: 20 },
+              children: [
+                new TextRun({
+                  text: patientInfo.age ? `${patientInfo.age} años` : '—',
+                  bold: true,
+                  size: 18,
+                  color: '0F172A',
+                  font: 'Helvetica',
+                }),
+              ],
+            }),
+          ],
+        }),
+        // Masa Corporal (Peso)
+        new TableCell({
+          columnSpan: 4,
+          width: { size: 20, type: WidthType.PERCENTAGE },
+          shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+          margins: { top: 70, bottom: 70, left: 120, right: 120 },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({ text: 'MASA CORPORAL (PESO)', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+              ],
+            }),
+            new Paragraph({
+              spacing: { before: 20 },
+              children: [
+                new TextRun({
+                  text: patientInfo.weight ? `${patientInfo.weight}` : '—',
+                  bold: true,
+                  size: 18,
+                  color: '0F172A',
+                  font: 'Helvetica',
+                }),
+              ],
+            }),
+          ],
+        }),
+        // Estatura (Talla)
+        new TableCell({
+          columnSpan: 4,
+          width: { size: 20, type: WidthType.PERCENTAGE },
+          shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+          margins: { top: 70, bottom: 70, left: 120, right: 120 },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({ text: 'ESTATURA (TALLA)', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+              ],
+            }),
+            new Paragraph({
+              spacing: { before: 20 },
+              children: [
+                new TextRun({
+                  text: displayHeight,
+                  bold: true,
+                  size: 18,
+                  color: '0F172A',
+                  font: 'Helvetica',
+                }),
+              ],
+            }),
+          ],
+        }),
+        // IMC
+        new TableCell({
+          columnSpan: 4,
+          width: { size: 20, type: WidthType.PERCENTAGE },
+          shading: { fill: 'F8FAFC', type: ShadingType.CLEAR },
+          margins: { top: 70, bottom: 70, left: 120, right: 120 },
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({ text: 'ÍNDICE MASA CORP. (IMC)', bold: true, size: 14, color: '64748B', font: 'Helvetica' }),
+              ],
+            }),
+            new Paragraph({
+              spacing: { before: 20 },
+              children: [
+                new TextRun({
+                  text: bmiInfo ? `${bmiInfo.formatted} (${bmiInfo.category})` : '—',
+                  bold: true,
+                  size: 17,
+                  color: '047857',
+                  font: 'Helvetica',
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }),
+  ];
+
+  // Si se capturaron pliegues, incluir sub-encabezado y columnas de pliegues
+  if (hasSkinfolds) {
+    anthropoTableRows.push(
       new TableRow({
         children: [
           new TableCell({
@@ -846,9 +861,10 @@ export async function exportPlanToWord(
             ],
           }),
         ],
-      }),
+      })
+    );
 
-      // Fila: 2 Columnas para Σ3 y Σ6 Pliegues (columnSpan 10 cada una)
+    anthropoTableRows.push(
       new TableRow({
         children: [
           // Σ3 Pliegues
@@ -955,9 +971,13 @@ export async function exportPlanToWord(
             ],
           }),
         ],
-      }),
+      })
+    );
+  }
 
-      // Fila 3: Sub-encabezado de Composición Corporal
+  // Si se capturó composición corporal, incluir sub-encabezado y 4 columnas
+  if (hasComposition) {
+    anthropoTableRows.push(
       new TableRow({
         children: [
           new TableCell({
@@ -979,9 +999,10 @@ export async function exportPlanToWord(
             ],
           }),
         ],
-      }),
+      })
+    );
 
-      // Fila 4: 4 Columnas: Masa Grasa, Masa Muscular, Masa Ósea, Masa Residual
+    anthropoTableRows.push(
       new TableRow({
         children: [
           // Masa Grasa
@@ -1097,8 +1118,21 @@ export async function exportPlanToWord(
             ],
           }),
         ],
-      }),
-    ],
+      })
+    );
+  }
+
+  const unifiedAnthropoCompTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    borders: {
+      top: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+      bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+      left: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+      right: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
+      insideHorizontal: { style: BorderStyle.SINGLE, size: 2, color: 'E2E8F0' },
+      insideVertical: { style: BorderStyle.SINGLE, size: 2, color: 'E2E8F0' },
+    },
+    rows: anthropoTableRows,
   });
 
   // ==========================================
@@ -1106,12 +1140,11 @@ export async function exportPlanToWord(
   // Se presenta en hoja propia si el expediente contiene mediciones capturadas
   // ==========================================
   const somatotype = calculateHeathCarterSomatotype(patientInfo);
+  const hasBasicAnthropo = Boolean(patientInfo.weight || patientInfo.height || patientInfo.age || patientInfo.gender);
   const hasAnthropoOrSomato = Boolean(
-    patientInfo.weight ||
-    patientInfo.height ||
-    patientInfo.fatPercent ||
-    patientInfo.musclePercent ||
-    skinfoldSums.sum6 ||
+    hasBasicAnthropo ||
+    hasSkinfolds ||
+    hasComposition ||
     somatotype.hasAnyData
   );
 

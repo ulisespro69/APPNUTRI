@@ -847,6 +847,74 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     );
   };
 
+  const hasAnyPatientData = Boolean(
+    patientInfo.name?.trim() ||
+    patientInfo.goal?.trim() ||
+    patientInfo.gender ||
+    patientInfo.weight ||
+    patientInfo.height ||
+    patientInfo.age ||
+    patientInfo.notes?.trim() ||
+    patientInfo.fatPercent ||
+    patientInfo.skinfolds?.triceps
+  );
+
+  const handleClearPatientData = () => {
+    onPatientInfoChange({
+      name: '',
+      date: new Date().toISOString().split('T')[0],
+      goal: '',
+      notes: '',
+      gender: '',
+      age: '',
+      weight: '',
+      height: '',
+      fatPercent: '',
+      fatKg: '',
+      musclePercent: '',
+      muscleKg: '',
+      bonePercent: '',
+      boneKg: '',
+      residualPercent: '',
+      residualKg: '',
+      skinfolds: undefined,
+      girths: undefined,
+      breadths: undefined,
+      preferredFoods: '',
+      dislikedFoods: '',
+      mealPreferences: undefined,
+    });
+  };
+
+  const handleLoadSamplePatientData = () => {
+    onPatientInfoChange({
+      name: 'Carlos Mendoza',
+      date: new Date().toISOString().split('T')[0],
+      goal: 'Desarrollo Muscular y Definición (Endo-mesomorfo)',
+      notes: 'Plan nutricional estructurado según metodología Heath-Carter y SMAE 5ta Edición.',
+      gender: 'Hombre',
+      age: 32,
+      weight: 79.0,
+      height: 1.70,
+      skinfolds: {
+        triceps: 8,
+        subescapular: 10,
+        supraespinal: 8.5,
+        abdominal: 14,
+        musloFrontal: 11,
+        pantorrillaMedial: 6,
+      },
+      girths: {
+        brazoContraido: 37.0,
+        pantorrillaMaximo: 38.0,
+      },
+      breadths: {
+        humeral: 6.4,
+        femoral: 9.4,
+      },
+    });
+  };
+
   return (
     <div className="bg-white rounded-2xl border border-emerald-100/80 shadow-xs p-4 sm:p-5 mb-6 transition-all no-print">
       {/* Top Banner: Datos del Paciente y Prescripción */}
@@ -866,6 +934,30 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {hasAnyPatientData ? (
+            <button
+              id="btn-clear-patient-data"
+              type="button"
+              onClick={handleClearPatientData}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-2xs font-semibold text-slate-600 hover:text-red-700 bg-slate-100 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-xl transition-all cursor-pointer"
+              title="Limpiar todos los datos del paciente e iniciar en blanco"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Iniciar en blanco</span>
+            </button>
+          ) : (
+            <button
+              id="btn-load-sample-patient"
+              type="button"
+              onClick={handleLoadSamplePatientData}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-2xs font-semibold text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all cursor-pointer"
+              title="Cargar datos de ejemplo para demostración clínica"
+            >
+              <FileEdit className="w-3 h-3" />
+              <span>Cargar ejemplo</span>
+            </button>
+          )}
+
           <button
             id="btn-toggle-patient-details"
             type="button"
@@ -3117,7 +3209,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
             >
               <span style={{ fontSize: '13px' }}>Notas generales (Alergias, Presupuesto, Estilo, etc.)</span>
               <span className="text-3xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded normal-case tracking-normal">
-                Solo se imprime en el PDF si contiene texto
+                Solo se incluye en descargas (Word/PDF) si contiene texto
               </span>
             </label>
             <input

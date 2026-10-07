@@ -152,18 +152,27 @@ export async function exportPlanToPdfNative(
   doc.setTextColor(71, 85, 105);
   doc.text(`Fecha de valoración: ${dateStr}`, leftX, y + 17.5);
 
-  // Objetivo o Prescripción
-  const clinicalGoal = cleanSpacing(patientInfo.goal && patientInfo.goal.trim() ? patientInfo.goal.trim() : 'Mantenimiento y Prescripción Dietoterapéutica');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(4, 120, 87); // emerald-700
-  const splitGoal = doc.splitTextToSize(`Objetivo: ${clinicalGoal}`, leftBoxWidth - 8);
-  doc.text(splitGoal[0], leftX, y + 23);
+  // Objetivo o Prescripción: solo se imprime si el usuario lo ingresó en el div correspondiente
+  const hasUserGoal = Boolean(patientInfo.goal && patientInfo.goal.trim());
+  if (hasUserGoal) {
+    const clinicalGoal = cleanSpacing(patientInfo.goal!.trim());
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(4, 120, 87); // emerald-700
+    const splitGoal = doc.splitTextToSize(`Objetivo: ${clinicalGoal}`, leftBoxWidth - 8);
+    doc.text(splitGoal[0], leftX, y + 23);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.8);
-  doc.setTextColor(100, 116, 139);
-  doc.text('Prescripción bajo Sistema Mexicano de Equivalentes (SMAE)', leftX, y + 28.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Prescripción bajo Sistema Mexicano de Equivalentes (SMAE)', leftX, y + 28.5);
+  } else {
+    // Si no se escribió objetivo, no se agrega texto simulado para eliminar espacios innecesarios
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.8);
+    doc.setTextColor(100, 116, 139);
+    doc.text('Prescripción bajo Sistema Mexicano de Equivalentes (SMAE)', leftX, y + 23.5);
+  }
 
   // Cuadro 2 (Derecho): Tabla de Kcal, Proteínas, Grasas y HC independiente
   doc.setFillColor(255, 255, 255);
@@ -370,17 +379,27 @@ export async function exportPlanToPdfNative(
   // --- 2.3 TABLA UNIFICADA: VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL ---
   const somatotype = calculateHeathCarterSomatotype(patientInfo);
   const skinfoldSums = calculateSkinfoldSums(patientInfo.skinfolds);
-  const hasAnthropoOrSomato = Boolean(
-    patientInfo.weight ||
-    patientInfo.height ||
+  const hasBasicAnthropo = Boolean(patientInfo.weight || patientInfo.height || patientInfo.age || patientInfo.gender);
+  const hasSkinfolds = (skinfoldSums.count6 || 0) > 0;
+  const hasComposition = Boolean(
     patientInfo.fatPercent ||
     patientInfo.musclePercent ||
-    skinfoldSums.sum6 ||
+    patientInfo.bonePercent ||
+    patientInfo.residualPercent
+  );
+
+  const hasAnthropoOrSomato = Boolean(
+    hasBasicAnthropo ||
+    hasSkinfolds ||
+    hasComposition ||
     somatotype.hasAnyData
   );
 
   if (hasAnthropoOrSomato) {
-    const unifiedTableHeight = 54;
+    let unifiedTableHeight = 17.5;
+    if (hasSkinfolds) unifiedTableHeight += 16.5;
+    if (hasComposition) unifiedTableHeight += 20.0;
+
     checkPageBreak(unifiedTableHeight + 2.5);
 
     const bmiInfo = calculateBmiInfo(patientInfo.height, patientInfo.weight);
@@ -393,251 +412,269 @@ export async function exportPlanToPdfNative(
         : hStr
       : '—';
 
-  // Contenedor principal de la tabla unificada
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(203, 213, 225); // slate-300
-  doc.setLineWidth(0.35);
-  doc.roundedRect(margin, y, contentWidth, unifiedTableHeight, 2, 2, 'FD');
+    // Contenedor principal de la tabla unificada
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(203, 213, 225); // slate-300
+    doc.setLineWidth(0.35);
+    doc.roundedRect(margin, y, contentWidth, unifiedTableHeight, 2, 2, 'FD');
 
-  // Encabezado Principal de la tabla unificada
-  doc.setFillColor(15, 23, 42); // slate-900
-  doc.roundedRect(margin, y, contentWidth, 5.5, 2, 2, 'F');
-  doc.rect(margin, y + 2.5, contentWidth, 3, 'F');
+    // Encabezado Principal de la tabla unificada
+    doc.setFillColor(15, 23, 42); // slate-900
+    doc.roundedRect(margin, y, contentWidth, 5.5, 2, 2, 'F');
+    doc.rect(margin, y + 2.5, contentWidth, 3, 'F');
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(255, 255, 255);
-  doc.text('VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL (MODELO 4 COMPONENTES)', margin + 3.5, y + 4.1);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(255, 255, 255);
+    const tableTitle = hasComposition
+      ? 'VALORACIÓN ANTROPOMÉTRICA Y COMPOSICIÓN CORPORAL (MODELO 4 COMPONENTES)'
+      : hasSkinfolds
+      ? 'VALORACIÓN ANTROPOMÉTRICA Y PLIEGUES CUTÁNEOS'
+      : 'VALORACIÓN ANTROPOMÉTRICA GENERAL';
+    doc.text(tableTitle, margin + 3.5, y + 4.1);
 
-  // --- Fila 1 de la tabla: Antropometría General (Sexo, Edad, Masa Corporal, Estatura, IMC) ---
-  const anthropoParams = [
-    { label: 'SEXO', value: patientInfo.gender || '—', sub: '' },
-    { label: 'EDAD', value: patientInfo.age ? `${patientInfo.age} años` : '—', sub: '' },
-    { label: 'MASA CORPORAL (PESO)', value: patientInfo.weight || '—', sub: '' },
-    { label: 'ESTATURA (TALLA)', value: displayHeight, sub: '' },
-    {
-      label: 'ÍNDICE MASA CORP. (IMC)',
-      value: bmiInfo ? bmiInfo.formatted : '—',
-      sub: bmiInfo ? `(${bmiInfo.category})` : '',
-    },
-  ];
+    // --- Fila 1 de la tabla: Antropometría General (Sexo, Edad, Masa Corporal, Estatura, IMC) ---
+    const anthropoParams = [
+      { label: 'SEXO', value: patientInfo.gender ? String(patientInfo.gender) : '—', sub: '' },
+      { label: 'EDAD', value: patientInfo.age ? `${patientInfo.age} años` : '—', sub: '' },
+      {
+        label: 'MASA CORPORAL (PESO)',
+        value: patientInfo.weight
+          ? `${patientInfo.weight}${String(patientInfo.weight).toLowerCase().includes('kg') ? '' : ' kg'}`
+          : '—',
+        sub: '',
+      },
+      { label: 'ESTATURA (TALLA)', value: String(displayHeight || '—'), sub: '' },
+      {
+        label: 'ÍNDICE MASA CORP. (IMC)',
+        value: bmiInfo ? String(bmiInfo.formatted) : '—',
+        sub: bmiInfo ? `(${bmiInfo.category})` : '',
+      },
+    ];
 
-  const colW = contentWidth / anthropoParams.length;
+    const colW = contentWidth / anthropoParams.length;
 
-  anthropoParams.forEach((param, idx) => {
-    const colX = margin + idx * colW;
-    // Línea divisoria vertical
-    if (idx > 0) {
-      doc.setDrawColor(226, 232, 240); // slate-200
+    anthropoParams.forEach((param, idx) => {
+      const colX = margin + idx * colW;
+      // Línea divisoria vertical
+      if (idx > 0) {
+        doc.setDrawColor(226, 232, 240); // slate-200
+        doc.setLineWidth(0.25);
+        doc.line(colX, y + 5.5, colX, y + 17.5);
+      }
+
+      // Etiqueta del parámetro antropométrico
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6);
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.text(String(param.label), colX + 3.5, y + 9.5);
+
+      // Valor del parámetro antropométrico
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42); // slate-900
+      const strVal = String(param.value);
+      doc.text(strVal, colX + 3.5, y + 14.8);
+
+      if (param.sub) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.8);
+        doc.setTextColor(4, 120, 87); // emerald-700
+        const valW = doc.getTextWidth(strVal);
+        doc.text(String(param.sub), colX + 3.5 + valW + 2, y + 14.8);
+      }
+    });
+
+    let currentSectionY = y + 17.5;
+
+    // --- Sub-franja: SUMATORIA DE PLIEGUES CUTÁNEOS (Solo si fueron capturados) ---
+    if (hasSkinfolds) {
+      doc.setDrawColor(203, 213, 225); // slate-300
+      doc.setLineWidth(0.3);
+      doc.line(margin, currentSectionY, margin + contentWidth, currentSectionY);
+
+      doc.setFillColor(240, 253, 244); // emerald-50
+      doc.rect(margin + 0.35, currentSectionY + 0.15, contentWidth - 0.7, 4, 'F');
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(6, 95, 70); // emerald-800
+      doc.text('SUMATORIA DE PLIEGUES CUTÁNEOS', margin + 3.5, currentSectionY + 3.1);
+
+      // 2 Columnas para Σ3 y Σ6 Pliegues
+      const pliegueColW = contentWidth / 2;
+
+      // Divisor vertical entre Σ3 y Σ6
+      doc.setDrawColor(226, 232, 240);
       doc.setLineWidth(0.25);
-      doc.line(colX, y + 5.5, colX, y + 17.5);
-    }
+      doc.line(margin + pliegueColW, currentSectionY + 4.15, margin + pliegueColW, currentSectionY + 16.5);
 
-    // Etiqueta del parámetro antropométrico
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6);
-    doc.setTextColor(100, 116, 139); // slate-500
-    doc.text(param.label, colX + 3.5, y + 9.5);
+      // Columna 1: SUMATORIA DE Σ3 PLIEGUES (mm)
+      const col3X = margin;
+      doc.setFillColor(5, 150, 105); // emerald-600
+      doc.circle(col3X + 4, currentSectionY + 7.5, 1, 'F');
 
-    // Valor del parámetro antropométrico
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.setTextColor(15, 23, 42); // slate-900
-    doc.text(param.value, colX + 3.5, y + 14.8);
-
-    if (param.sub) {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(6.8);
+      doc.setTextColor(6, 95, 70); // emerald-800
+      doc.text('SUMATORIA DE Σ3 PLIEGUES (mm)', col3X + 6.5, currentSectionY + 8.3);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.8);
+      doc.setTextColor(100, 116, 139); // slate-500
+      doc.text('Subescapular + Supraespinal + Abdominal', col3X + 6.5, currentSectionY + 12.0);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
       doc.setTextColor(4, 120, 87); // emerald-700
-      const valW = doc.getTextWidth(param.value);
-      doc.text(param.sub, colX + 3.5 + valW + 2, y + 14.8);
-    }
-  });
+      const sum3Text = skinfoldSums.sum3 || '— mm';
+      doc.text(sum3Text, col3X + 6.5, currentSectionY + 15.7);
 
-  // Divisor horizontal: De parámetros generales a Sumatorias de Pliegues
-  doc.setDrawColor(203, 213, 225); // slate-300
-  doc.setLineWidth(0.3);
-  doc.line(margin, y + 17.5, margin + contentWidth, y + 17.5);
+      if (skinfoldSums.count3 > 0) {
+        const s3W = doc.getTextWidth(sum3Text);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6);
+        doc.setTextColor(100, 116, 139);
+        doc.text(
+          skinfoldSums.isComplete3 ? '(3/3 completados)' : `(${skinfoldSums.count3}/3 capturados)`,
+          col3X + 6.5 + s3W + 2,
+          currentSectionY + 15.7
+        );
+      }
 
-  // --- Sub-franja: SUMATORIA DE PLIEGUES CUTÁNEOS ---
-  doc.setFillColor(240, 253, 244); // emerald-50
-  doc.rect(margin + 0.35, y + 17.65, contentWidth - 0.7, 4, 'F');
+      // Columna 2: SUMATORIA DE Σ6 PLIEGUES (mm)
+      const col6X = margin + pliegueColW;
+      doc.setFillColor(15, 118, 110); // teal-600
+      doc.circle(col6X + 4, currentSectionY + 7.5, 1, 'F');
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.5);
-  doc.setTextColor(6, 95, 70); // emerald-800
-  doc.text('SUMATORIA DE PLIEGUES CUTÁNEOS', margin + 3.5, y + 20.6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.8);
+      doc.setTextColor(15, 118, 110); // teal-700
+      doc.text('SUMATORIA DE Σ6 PLIEGUES (mm)', col6X + 6.5, currentSectionY + 8.3);
 
-  // 2 Columnas para Σ3 y Σ6 Pliegues
-  const pliegueColW = contentWidth / 2;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(5.8);
+      doc.setTextColor(100, 116, 139);
+      doc.text('Tríceps + Subescapular + Supraespinal + Abdominal + Muslo Frontal + Pantorrilla Medial', col6X + 6.5, currentSectionY + 12.0);
 
-  // Divisor vertical entre Σ3 y Σ6
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.25);
-  doc.line(margin + pliegueColW, y + 21.65, margin + pliegueColW, y + 34.0);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(15, 118, 110); // teal-700
+      const sum6Text = skinfoldSums.sum6 || '— mm';
+      doc.text(sum6Text, col6X + 6.5, currentSectionY + 15.7);
 
-  // Columna 1: SUMATORIA DE Σ3 PLIEGUES (mm)
-  const col3X = margin;
-  doc.setFillColor(5, 150, 105); // emerald-600
-  doc.circle(col3X + 4, y + 25.0, 1, 'F');
+      if (skinfoldSums.count6 > 0) {
+        const s6W = doc.getTextWidth(sum6Text);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6);
+        doc.setTextColor(100, 116, 139);
+        doc.text(
+          skinfoldSums.isComplete6 ? '(6/6 completados)' : `(${skinfoldSums.count6}/6 capturados)`,
+          col6X + 6.5 + s6W + 2,
+          currentSectionY + 15.7
+        );
+      }
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.8);
-  doc.setTextColor(6, 95, 70); // emerald-800
-  doc.text('SUMATORIA DE Σ3 PLIEGUES (mm)', col3X + 6.5, y + 25.8);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(5.8);
-  doc.setTextColor(100, 116, 139); // slate-500
-  doc.text('Subescapular + Supraespinal + Abdominal', col3X + 6.5, y + 29.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(4, 120, 87); // emerald-700
-  const sum3Text = skinfoldSums.sum3 || '— mm';
-  doc.text(sum3Text, col3X + 6.5, y + 33.2);
-
-  if (skinfoldSums.count3 > 0) {
-    const s3W = doc.getTextWidth(sum3Text);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6);
-    doc.setTextColor(100, 116, 139);
-    doc.text(
-      skinfoldSums.isComplete3 ? '(3/3 completados)' : `(${skinfoldSums.count3}/3 capturados)`,
-      col3X + 6.5 + s3W + 2,
-      y + 33.2
-    );
-  }
-
-  // Columna 2: SUMATORIA DE Σ6 PLIEGUES (mm)
-  const col6X = margin + pliegueColW;
-  doc.setFillColor(15, 118, 110); // teal-600
-  doc.circle(col6X + 4, y + 25.0, 1, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.8);
-  doc.setTextColor(15, 118, 110); // teal-700
-  doc.text('SUMATORIA DE Σ6 PLIEGUES (mm)', col6X + 6.5, y + 25.8);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(5.8);
-  doc.setTextColor(100, 116, 139);
-  doc.text('Tríceps + Subescapular + Supraespinal + Abdominal + Muslo Frontal + Pantorrilla Medial', col6X + 6.5, y + 29.5);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
-  doc.setTextColor(15, 118, 110); // teal-700
-  const sum6Text = skinfoldSums.sum6 || '— mm';
-  doc.text(sum6Text, col6X + 6.5, y + 33.2);
-
-  if (skinfoldSums.count6 > 0) {
-    const s6W = doc.getTextWidth(sum6Text);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6);
-    doc.setTextColor(100, 116, 139);
-    doc.text(
-      skinfoldSums.isComplete6 ? '(6/6 completados)' : `(${skinfoldSums.count6}/6 capturados)`,
-      col6X + 6.5 + s6W + 2,
-      y + 33.2
-    );
-  }
-
-  // Divisor horizontal: De Sumatorias de Pliegues a Composición Corporal
-  doc.setDrawColor(203, 213, 225); // slate-300
-  doc.setLineWidth(0.3);
-  doc.line(margin, y + 34.0, margin + contentWidth, y + 34.0);
-
-  // Sub-franja de Composición Corporal
-  doc.setFillColor(248, 250, 252); // slate-50
-  doc.rect(margin + 0.35, y + 34.15, contentWidth - 0.7, 4, 'F');
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(6.5);
-  doc.setTextColor(71, 85, 105); // slate-600
-  doc.text('COMPOSICIÓN CORPORAL (FRACCIONAMIENTO 4 COMPONENTES)', margin + 3.5, y + 37.1);
-
-  // --- Fila 3 de la tabla: 4 Componentes de Composición Corporal ---
-  const compData = [
-    {
-      title: 'Masa Grasa',
-      pctLabel: '% de Grasa:',
-      pct: patientInfo.fatPercent ? `${patientInfo.fatPercent}%` : '—',
-      kgLabel: 'Kg de Grasa:',
-      kg: patientInfo.fatKg ? `${patientInfo.fatKg} kg` : '—',
-      color: [217, 119, 6], // amber-600
-    },
-    {
-      title: 'Masa Muscular',
-      pctLabel: '% de Músculo:',
-      pct: patientInfo.musclePercent ? `${patientInfo.musclePercent}%` : '—',
-      kgLabel: 'Kg de Músculo:',
-      kg: patientInfo.muscleKg ? `${patientInfo.muscleKg} kg` : '—',
-      color: [225, 29, 72], // rose-600
-    },
-    {
-      title: 'Masa Ósea (Hueso)',
-      pctLabel: '% de Hueso:',
-      pct: patientInfo.bonePercent ? `${patientInfo.bonePercent}%` : '—',
-      kgLabel: 'Kg de Hueso:',
-      kg: patientInfo.boneKg ? `${patientInfo.boneKg} kg` : '—',
-      color: [2, 132, 199], // sky-600
-    },
-    {
-      title: 'Masa Residual',
-      pctLabel: '% de Residual:',
-      pct: patientInfo.residualPercent ? `${patientInfo.residualPercent}%` : '—',
-      kgLabel: 'Kg Residual:',
-      kg: patientInfo.residualKg ? `${patientInfo.residualKg} kg` : '—',
-      color: [147, 51, 234], // purple-600
-    },
-  ];
-
-  const compColW = contentWidth / compData.length;
-
-  compData.forEach((c, idx) => {
-    const colX = margin + idx * compColW;
-    // Línea divisoria vertical
-    if (idx > 0) {
-      doc.setDrawColor(226, 232, 240); // slate-200
-      doc.setLineWidth(0.25);
-      doc.line(colX, y + 34.0, colX, y + unifiedTableHeight - 0.5);
+      currentSectionY += 16.5;
     }
 
-    // Título del componente con círculo de color
-    doc.setFillColor(c.color[0], c.color[1], c.color[2]);
-    doc.circle(colX + 3.5, y + 41.2, 1, 'F');
+    // --- Sub-franja de Composición Corporal (Solo si fue capturada) ---
+    if (hasComposition) {
+      doc.setDrawColor(203, 213, 225); // slate-300
+      doc.setLineWidth(0.3);
+      doc.line(margin, currentSectionY, margin + contentWidth, currentSectionY);
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7);
-    doc.setTextColor(30, 41, 59); // slate-800
-    doc.text(c.title, colX + 6, y + 42.1);
+      doc.setFillColor(248, 250, 252); // slate-50
+      doc.rect(margin + 0.35, currentSectionY + 0.15, contentWidth - 0.7, 4, 'F');
 
-    // % renglón
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
-    doc.setTextColor(71, 85, 105); // slate-600
-    const pctLabelW = doc.getTextWidth(c.pctLabel);
-    doc.text(c.pctLabel, colX + 3.5, y + 46.2);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(6.5);
+      doc.setTextColor(71, 85, 105); // slate-600
+      doc.text('COMPOSICIÓN CORPORAL (FRACCIONAMIENTO 4 COMPONENTES)', margin + 3.5, currentSectionY + 3.1);
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.8);
-    doc.setTextColor(15, 23, 42);
-    doc.text(c.pct, colX + 3.5 + pctLabelW + 1.5, y + 46.2);
+      const compData = [
+        {
+          title: 'Masa Grasa',
+          pctLabel: '% de Grasa:',
+          pct: patientInfo.fatPercent ? `${patientInfo.fatPercent}%` : '—',
+          kgLabel: 'Kg de Grasa:',
+          kg: patientInfo.fatKg ? `${patientInfo.fatKg} kg` : '—',
+          color: [217, 119, 6], // amber-600
+        },
+        {
+          title: 'Masa Muscular',
+          pctLabel: '% de Músculo:',
+          pct: patientInfo.musclePercent ? `${patientInfo.musclePercent}%` : '—',
+          kgLabel: 'Kg de Músculo:',
+          kg: patientInfo.muscleKg ? `${patientInfo.muscleKg} kg` : '—',
+          color: [225, 29, 72], // rose-600
+        },
+        {
+          title: 'Masa Ósea (Hueso)',
+          pctLabel: '% de Hueso:',
+          pct: patientInfo.bonePercent ? `${patientInfo.bonePercent}%` : '—',
+          kgLabel: 'Kg de Hueso:',
+          kg: patientInfo.boneKg ? `${patientInfo.boneKg} kg` : '—',
+          color: [2, 132, 199], // sky-600
+        },
+        {
+          title: 'Masa Residual',
+          pctLabel: '% de Residual:',
+          pct: patientInfo.residualPercent ? `${patientInfo.residualPercent}%` : '—',
+          kgLabel: 'Kg Residual:',
+          kg: patientInfo.residualKg ? `${patientInfo.residualKg} kg` : '—',
+          color: [147, 51, 234], // purple-600
+        },
+      ];
 
-    // Kg renglón
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6.5);
-    doc.setTextColor(71, 85, 105);
-    const kgLabelW = doc.getTextWidth(c.kgLabel);
-    doc.text(c.kgLabel, colX + 3.5, y + 50.0);
+      const compColW = contentWidth / compData.length;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(6.8);
-    doc.setTextColor(15, 23, 42);
-    doc.text(c.kg, colX + 3.5 + kgLabelW + 1.5, y + 50.0);
-  });
+      compData.forEach((c, idx) => {
+        const colX = margin + idx * compColW;
+        if (idx > 0) {
+          doc.setDrawColor(226, 232, 240); // slate-200
+          doc.setLineWidth(0.25);
+          doc.line(colX, currentSectionY, colX, currentSectionY + 20.0);
+        }
 
-  y += unifiedTableHeight + 2.5;
+        // Título del componente con círculo de color
+        doc.setFillColor(c.color[0], c.color[1], c.color[2]);
+        doc.circle(colX + 3.5, currentSectionY + 7.2, 1, 'F');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(30, 41, 59); // slate-800
+        doc.text(String(c.title), colX + 6, currentSectionY + 8.1);
+
+        // % renglón
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(71, 85, 105); // slate-600
+        const pctLabelW = doc.getTextWidth(String(c.pctLabel));
+        doc.text(String(c.pctLabel), colX + 3.5, currentSectionY + 12.2);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.8);
+        doc.setTextColor(15, 23, 42);
+        doc.text(String(c.pct), colX + 3.5 + pctLabelW + 1.5, currentSectionY + 12.2);
+
+        // Kg renglón
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(71, 85, 105);
+        const kgLabelW = doc.getTextWidth(String(c.kgLabel));
+        doc.text(String(c.kgLabel), colX + 3.5, currentSectionY + 16.0);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.8);
+        doc.setTextColor(15, 23, 42);
+        doc.text(String(c.kg), colX + 3.5 + kgLabelW + 1.5, currentSectionY + 16.0);
+      });
+
+      currentSectionY += 20.0;
+    }
+
+    y += unifiedTableHeight + 2.5;
 
   // --- 2.25 Somatotipo (Método Heath-Carter) ---
   if (somatotype.hasAnyData) {

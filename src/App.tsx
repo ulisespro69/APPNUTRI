@@ -63,34 +63,34 @@ import {
   Star,
 } from 'lucide-react';
 
+export const EMPTY_PATIENT_INFO: PatientInfo = {
+  name: '',
+  date: new Date().toISOString().split('T')[0],
+  goal: '',
+  notes: '',
+  gender: '',
+  age: '',
+  weight: '',
+  height: '',
+  fatPercent: '',
+  fatKg: '',
+  musclePercent: '',
+  muscleKg: '',
+  bonePercent: '',
+  boneKg: '',
+  residualPercent: '',
+  residualKg: '',
+  skinfolds: undefined,
+  girths: undefined,
+  breadths: undefined,
+  preferredFoods: '',
+  dislikedFoods: '',
+  mealPreferences: undefined,
+};
+
 export default function App() {
   const [tableState, setTableState] = useState<TableGridState>(INITIAL_TABLE_STATE);
-  const [patientInfo, setPatientInfo] = useState<PatientInfo>({
-    name: 'Carlos Mendoza',
-    date: new Date().toISOString().split('T')[0],
-    goal: 'Desarrollo Muscular y Definición (Endo-mesomorfo)',
-    notes: 'Plan nutricional estructurado según metodología Heath-Carter y SMAE 5ta Edición.',
-    gender: 'Hombre',
-    age: 32,
-    weight: 79.0,
-    height: 1.70,
-    skinfolds: {
-      triceps: 8,
-      subescapular: 10,
-      supraespinal: 8.5,
-      abdominal: 14,
-      musloFrontal: 11,
-      pantorrillaMedial: 6,
-    },
-    girths: {
-      brazoContraido: 37.0,
-      pantorrillaMaximo: 38.0,
-    },
-    breadths: {
-      humeral: 6.4,
-      femoral: 9.4,
-    },
-  });
+  const [patientInfo, setPatientInfo] = useState<PatientInfo>(EMPTY_PATIENT_INFO);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [regeneratingMeal, setRegeneratingMeal] = useState<string | null>(null);

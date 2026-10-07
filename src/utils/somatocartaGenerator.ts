@@ -151,9 +151,11 @@ export function generateSomatocartaSvgString(
   let patientMarkerSvg = '';
   if (patientPoint) {
     patientMarkerSvg = `
-      <!-- Marcador del paciente: solo el punto -->
+      <!-- Marcador del paciente: punto aumentado y de alta visibilidad para descargas (Word, PDF) -->
       <g id="patient-marker">
-        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="6" fill="#dc2626" stroke="#ffffff" stroke-width="2" />
+        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="18" fill="#dc2626" fill-opacity="0.28" />
+        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="11" fill="#dc2626" stroke="#ffffff" stroke-width="3" />
+        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="3.5" fill="#ffffff" />
       </g>
     `;
   } else {

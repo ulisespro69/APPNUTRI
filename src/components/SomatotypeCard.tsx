@@ -77,29 +77,29 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
     };
   };
 
-  // Punto del paciente si hay cálculo válido, o punto de referencia canónico
+  // Punto del paciente si hay cálculo válido
   const isCustomCalculated = somatotype.isComplete && somatotype.x !== null && somatotype.y !== null;
   const patientPoint =
     somatotype.x !== null && somatotype.y !== null
       ? getPixelCoord(somatotype.x, somatotype.y)
       : null;
 
-  const activeX = isCustomCalculated && somatotype.x !== null ? somatotype.x : -2.0;
-  const activeY = isCustomCalculated && somatotype.y !== null ? somatotype.y : 9.0;
-  const activePoint = patientPoint || getPixelCoord(activeX, activeY);
-
-  const displayEndo = isCustomCalculated ? somatotype.endoFormatted : '2.7';
-  const displayMeso = isCustomCalculated ? somatotype.mesoFormatted : '6.2';
-  const displayEcto = isCustomCalculated ? somatotype.ectoFormatted : '0.7';
-  const displayClassName = isCustomCalculated && somatotype.classification ? somatotype.classification.name : 'Endo-mesomorfo';
+  const displayEndo = somatotype.endoFormatted !== '—' ? somatotype.endoFormatted : (somatotype.endomorphy !== null ? somatotype.endomorphy.toFixed(1) : '—');
+  const displayMeso = somatotype.mesoFormatted !== '—' ? somatotype.mesoFormatted : (somatotype.mesomorphy !== null ? somatotype.mesomorphy.toFixed(1) : '—');
+  const displayEcto = somatotype.ectoFormatted !== '—' ? somatotype.ectoFormatted : (somatotype.ectomorphy !== null ? somatotype.ectomorphy.toFixed(1) : '—');
+  const displayClassName = isCustomCalculated && somatotype.classification
+    ? somatotype.classification.name
+    : (somatotype.hasAnyData ? 'En proceso de cálculo' : 'Pendiente de datos');
   const displayInterp = isCustomCalculated && somatotype.classification?.description
     ? somatotype.classification.description
-    : 'La mesomorfia es dominante y la endomorfia es mayor que la ectomorfia. Fuerte componente muscular con moderada adiposidad subcutánea.';
+    : (somatotype.hasAnyData
+        ? 'Completa los pliegues, perímetros y diámetros requeridos para determinar la clasificación somatotípica.'
+        : 'Ingresa las medidas antropométricas del paciente (peso, talla, pliegues, perímetros y diámetros) en la sección superior para calcular el somatotipo de Heath-Carter y proyectar el punto.');
   const displayScaleSummary = isCustomCalculated && somatotype.scaleSummaryText
     ? somatotype.scaleSummaryText
-    : 'Hombre de 32 años con un peso de 79.0 kg y estatura de 1.70 m. Presenta una moderada adiposidad relativa, con un alto desarrollo musculoesquelético y una baja linealidad relativa.';
-  const displayX = isCustomCalculated && somatotype.x !== null ? somatotype.x.toFixed(1) : '-2.0';
-  const displayY = isCustomCalculated && somatotype.y !== null ? somatotype.y.toFixed(1) : '9.0';
+    : (somatotype.hasAnyData ? 'Variables antropométricas incompletas.' : 'Sin datos antropométricos registrados.');
+  const displayX = somatotype.x !== null ? somatotype.x.toFixed(1) : '—';
+  const displayY = somatotype.y !== null ? somatotype.y.toFixed(1) : '—';
 
   // Vértices del triángulo de Carter & Heath (Reuleaux curvilíneo)
   // Mesomorfismo puro: (0, +12)
@@ -479,25 +479,59 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
       {renderYTicks(boxX0, true)}
       {renderYTicks(boxXRight, false)}
 
-      {/* Marcador del Paciente: Solo el punto */}
-      <g id="patient-marker" className="transition-all duration-300">
-        <circle
-          cx={activePoint.px}
-          cy={activePoint.py}
-          r="6.5"
-          fill="#dc2626"
-          stroke="#ffffff"
-          strokeWidth="2.2"
-          className="drop-shadow-xs"
-        />
-        <circle
-          cx={activePoint.px}
-          cy={activePoint.py}
-          r="11"
-          fill="#dc2626"
-          fillOpacity="0.22"
-        />
-      </g>
+      {/* Marcador del Paciente: Solo se grafica si existen coordenadas del paciente */}
+      {patientPoint ? (
+        <g id="patient-marker" className="transition-all duration-300">
+          {/* Halo exterior reflectante */}
+          <circle
+            cx={patientPoint.px}
+            cy={patientPoint.py}
+            r="18"
+            fill="#dc2626"
+            fillOpacity="0.25"
+            className="animate-pulse"
+          />
+          {/* Círculo principal rojo vivo de mayor calibre con borde blanco */}
+          <circle
+            cx={patientPoint.px}
+            cy={patientPoint.py}
+            r="11"
+            fill="#dc2626"
+            stroke="#ffffff"
+            strokeWidth="3"
+            className="drop-shadow-md"
+          />
+          {/* Punto central de mira blanca de alto contraste */}
+          <circle
+            cx={patientPoint.px}
+            cy={patientPoint.py}
+            r="3.5"
+            fill="#ffffff"
+          />
+        </g>
+      ) : (
+        <g id="patient-marker-empty" className="pointer-events-none select-none">
+          <rect
+            x={originX - 105}
+            y={originY - 14}
+            width="210"
+            height="28"
+            rx="6"
+            fill="#0f172a"
+            fillOpacity="0.75"
+          />
+          <text
+            x={originX}
+            y={originY + 4}
+            textAnchor="middle"
+            fill="#ffffff"
+            fontSize="10"
+            fontWeight="600"
+          >
+            Introduce datos para graficar punto
+          </text>
+        </g>
+      )}
     </svg>
   );
 
