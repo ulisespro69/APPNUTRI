@@ -70,9 +70,9 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     });
   };
 
-  const skinfoldsCount = Object.values(patientInfo.skinfolds || {}).filter((v) => typeof v === 'string' && v.trim() !== '').length;
-  const girthsCount = Object.values(patientInfo.girths || {}).filter((v) => typeof v === 'string' && v.trim() !== '').length;
-  const breadthsCount = Object.values(patientInfo.breadths || {}).filter((v) => typeof v === 'string' && v.trim() !== '').length;
+  const skinfoldsCount = Object.values(patientInfo.skinfolds || {}).filter((v) => v !== undefined && v !== null && String(v).trim() !== '').length;
+  const girthsCount = Object.values(patientInfo.girths || {}).filter((v) => v !== undefined && v !== null && String(v).trim() !== '').length;
+  const breadthsCount = Object.values(patientInfo.breadths || {}).filter((v) => v !== undefined && v !== null && String(v).trim() !== '').length;
 
   const skinfoldValues = [
     patientInfo.skinfolds?.triceps,
@@ -85,7 +85,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     patientInfo.skinfolds?.abdominal,
     patientInfo.skinfolds?.musloFrontal,
     patientInfo.skinfolds?.pantorrillaMedial,
-  ].map((v) => parseFloat(v || '')).filter((n) => !isNaN(n) && n > 0);
+  ].map((v) => parseFloat(String(v ?? '').replace(',', '.'))).filter((n) => !isNaN(n) && n > 0);
 
   const skinfoldSum = skinfoldValues.length > 0
     ? skinfoldValues.reduce((acc, curr) => acc + curr, 0).toFixed(1)
@@ -193,21 +193,21 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     rochaBoneMass.isComplete &&
     rochaBoneMass.boneKg &&
     patientInfo.boneKg &&
-    parseFloat(patientInfo.boneKg.replace(',', '.')) === parseFloat(rochaBoneMass.boneKg.replace(',', '.'))
+    parseFloat(String(patientInfo.boneKg).replace(',', '.')) === parseFloat(String(rochaBoneMass.boneKg).replace(',', '.'))
   );
 
   const isResidualActive = Boolean(
     residualMassEst.isComplete &&
     residualMassEst.residualKg &&
     patientInfo.residualKg &&
-    parseFloat(patientInfo.residualKg.replace(',', '.')) === parseFloat(residualMassEst.residualKg.replace(',', '.'))
+    parseFloat(String(patientInfo.residualKg).replace(',', '.')) === parseFloat(String(residualMassEst.residualKg).replace(',', '.'))
   );
 
   const isMuscleActive = Boolean(
     muscleMassEst.isComplete &&
     muscleMassEst.musclePercent &&
     patientInfo.musclePercent &&
-    parseFloat(patientInfo.musclePercent.replace(',', '.')) === parseFloat(muscleMassEst.musclePercent.replace(',', '.'))
+    parseFloat(String(patientInfo.musclePercent).replace(',', '.')) === parseFloat(String(muscleMassEst.musclePercent).replace(',', '.'))
   );
 
   const waistVal = parseFloat(patientInfo.girths?.cinturaMinima || '');
@@ -321,7 +321,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
   );
 
   const realWeightKg = macroWeights.realWeight;
-  const currentWeightNum = realWeightKg || (patientInfo.weight ? parseFloat(patientInfo.weight.replace(',', '.')) : null);
+  const currentWeightNum = realWeightKg || (patientInfo.weight ? parseFloat(String(patientInfo.weight).replace(',', '.')) : null);
 
   // Kcal meta de referencia (de prescripción, GET o SMAE)
   const defaultTargetKcal = caloricCalculation.isComplete && caloricCalculation.get
@@ -1336,7 +1336,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                           onChange={(e) => {
                             const newPct = e.target.value;
                             let newKg = patientInfo.fatKg;
-                            const w = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                            const w = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                             const p = parseFloat(newPct.replace(',', '.'));
                             if (!isNaN(w) && w > 0 && !isNaN(p)) {
                               newKg = ((p * w) / 100).toFixed(2);
@@ -1369,7 +1369,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                           onChange={(e) => {
                             const newKg = e.target.value;
                             let newPct = patientInfo.fatPercent;
-                            const w = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                            const w = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                             const k = parseFloat(newKg.replace(',', '.'));
                             if (!isNaN(w) && w > 0 && !isNaN(k)) {
                               newPct = ((k / w) * 100).toFixed(1);
@@ -1405,7 +1405,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                         const isSelected = Boolean(
                           formula.bodyFatPercent &&
                           patientInfo.fatPercent &&
-                          parseFloat(patientInfo.fatPercent.replace(',', '.')) === parseFloat(formula.bodyFatPercent.replace(',', '.'))
+                          parseFloat(String(patientInfo.fatPercent).replace(',', '.')) === parseFloat(String(formula.bodyFatPercent).replace(',', '.'))
                         );
 
                         return (
@@ -1416,7 +1416,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                               formula.bodyFatPercent
                                 ? () => {
                                     const newFatPercent = formula.bodyFatPercent!;
-                                    const weightNum = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                                    const weightNum = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                                     const p = parseFloat(newFatPercent.replace(',', '.'));
                                     let newFatKg = patientInfo.fatKg;
                                     if (!isNaN(weightNum) && weightNum > 0 && !isNaN(p)) {
@@ -1467,7 +1467,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                                     {formula.bodyFatPercent}%
                                   </span>
                                   {(() => {
-                                    const w = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                                    const w = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                                     const p = parseFloat(formula.bodyFatPercent.replace(',', '.'));
                                     if (!isNaN(w) && w > 0 && !isNaN(p)) {
                                       const kg = ((p * w) / 100).toFixed(1);
@@ -1548,7 +1548,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                           onChange={(e) => {
                             const newPct = e.target.value;
                             let newKg = patientInfo.muscleKg;
-                            const w = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                            const w = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                             const p = parseFloat(newPct.replace(',', '.'));
                             if (!isNaN(w) && w > 0 && !isNaN(p)) {
                               newKg = ((p * w) / 100).toFixed(2);
@@ -1581,7 +1581,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                           onChange={(e) => {
                             const newKg = e.target.value;
                             let newPct = patientInfo.musclePercent;
-                            const w = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                            const w = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                             const k = parseFloat(newKg.replace(',', '.'));
                             if (!isNaN(w) && w > 0 && !isNaN(k)) {
                               newPct = ((k / w) * 100).toFixed(1);
@@ -1774,7 +1774,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                           onChange={(e) => {
                             const newPct = e.target.value;
                             let newKg = patientInfo.boneKg;
-                            const w = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                            const w = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                             const p = parseFloat(newPct.replace(',', '.'));
                             if (!isNaN(w) && w > 0 && !isNaN(p)) {
                               newKg = ((w * p) / 100).toFixed(2);
@@ -1807,7 +1807,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                           onChange={(e) => {
                             const newKg = e.target.value;
                             let newPct = patientInfo.bonePercent;
-                            const w = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                            const w = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                             const k = parseFloat(newKg.replace(',', '.'));
                             if (!isNaN(w) && w > 0 && !isNaN(k)) {
                               newPct = ((k / w) * 100).toFixed(1);
@@ -1969,7 +1969,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                           onChange={(e) => {
                             const newPct = e.target.value;
                             let newKg = patientInfo.residualKg;
-                            const w = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                            const w = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                             const p = parseFloat(newPct.replace(',', '.'));
                             if (!isNaN(w) && w > 0 && !isNaN(p)) {
                               newKg = ((w * p) / 100).toFixed(2);
@@ -2002,7 +2002,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                           onChange={(e) => {
                             const newKg = e.target.value;
                             let newPct = patientInfo.residualPercent;
-                            const w = parseFloat(patientInfo.weight?.replace(',', '.') || '');
+                            const w = parseFloat(String(patientInfo.weight ?? '').replace(',', '.') || '');
                             const k = parseFloat(newKg.replace(',', '.'));
                             if (!isNaN(w) && w > 0 && !isNaN(k)) {
                               newPct = ((k / w) * 100).toFixed(1);

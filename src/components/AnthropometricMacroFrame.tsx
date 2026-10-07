@@ -42,15 +42,16 @@ const AnthropometricMacroFrameComponent: React.FC<AnthropometricMacroFrameProps>
     [patientInfo]
   );
 
-  const displayHeight = patientInfo.height
-    ? /\d$/.test(patientInfo.height.trim())
-      ? parseFloat(patientInfo.height) > 3
-        ? `${patientInfo.height.trim()} cm`
-        : `${patientInfo.height.trim()} m`
-      : patientInfo.height
+  const heightStr = patientInfo.height != null ? String(patientInfo.height).trim() : '';
+  const displayHeight = heightStr
+    ? /\d$/.test(heightStr)
+      ? parseFloat(heightStr) > 3
+        ? `${heightStr} cm`
+        : `${heightStr} m`
+      : heightStr
     : '—';
 
-  const weightNum = parseFloat(patientInfo.weight || '0') || null;
+  const weightNum = parseFloat(String(patientInfo.weight || '0').replace(',', '.')) || null;
   const gPerKg =
     weightNum && weightNum > 0 && macros.totalProteinGrams > 0
       ? (macros.totalProteinGrams / weightNum).toFixed(2)

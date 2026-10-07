@@ -181,7 +181,7 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
             x={px}
             y={labelY}
             textAnchor="middle"
-            className="fill-black text-[12.5px] font-black select-none"
+            className="fill-black text-[14.5px] font-black select-none"
             style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
           >
             {labelText}
@@ -240,7 +240,7 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
             x={labelX}
             y={py + 4.0}
             textAnchor={isLeft ? 'end' : 'start'}
-            className="fill-black text-[12.5px] font-black select-none"
+            className="fill-black text-[14.5px] font-black select-none"
             style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
           >
             {labelText}
@@ -258,8 +258,8 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
       viewBox={`0 0 ${svgWidth} ${svgHeight}`}
       className="w-full h-auto select-none"
       style={{
-        maxWidth: isZoom ? '840px' : '560px',
-        maxHeight: isZoom ? '85vh' : '560px',
+        maxWidth: isZoom ? '840px' : '612px',
+        maxHeight: isZoom ? '85vh' : '612px',
         backgroundColor: '#ffffff',
         fontFamily: 'Arial, Helvetica, sans-serif',
       }}
@@ -416,7 +416,7 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
           x={originX + 6}
           y={134}
           textAnchor="middle"
-          className="fill-slate-900 text-[14.5px] font-black tracking-wider select-none"
+          className="fill-slate-900 text-[16px] font-black tracking-wider select-none"
           style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
         >
           MESOMORFISMO
@@ -441,7 +441,7 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
           x={124 + 6}
           y={518}
           textAnchor="middle"
-          className="fill-slate-900 text-[14.5px] font-black tracking-wider select-none"
+          className="fill-slate-900 text-[16px] font-black tracking-wider select-none"
           style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
         >
           ENDOMORFISMO
@@ -466,7 +466,7 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
           x={488 + 6}
           y={518}
           textAnchor="middle"
-          className="fill-slate-900 text-[14.5px] font-black tracking-wider select-none"
+          className="fill-slate-900 text-[16px] font-black tracking-wider select-none"
           style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}
         >
           ECTOMORFISMO
@@ -480,50 +480,24 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
       {renderYTicks(boxXRight, false)}
 
       {/* Marcador del Paciente: Solo el punto */}
-      {patientPoint ? (
-        <g id="patient-marker" className="transition-all duration-300">
-          <circle
-            cx={patientPoint.px}
-            cy={patientPoint.py}
-            r="6"
-            fill="#dc2626"
-            stroke="#ffffff"
-            strokeWidth="2"
-            className="drop-shadow-xs"
-          />
-        </g>
-      ) : (
-        /* Estado cuando faltan variables */
-        <g id="empty-state-notice">
-          <rect
-            x={originX - 110}
-            y={originY - 32}
-            width="220"
-            height="64"
-            rx="8"
-            fill="#ffffff"
-            stroke="#e2e8f0"
-            strokeWidth="1.5"
-            className="drop-shadow-sm"
-          />
-          <text
-            x={originX}
-            y={originY - 4}
-            textAnchor="middle"
-            className="fill-slate-800 text-[11px] font-extrabold"
-          >
-            Punto no ubicado aún
-          </text>
-          <text
-            x={originX}
-            y={originY + 12}
-            textAnchor="middle"
-            className="fill-slate-500 text-[9px] font-medium"
-          >
-            Complete las 10 medidas antropométricas ISAK
-          </text>
-        </g>
-      )}
+      <g id="patient-marker" className="transition-all duration-300">
+        <circle
+          cx={activePoint.px}
+          cy={activePoint.py}
+          r="6.5"
+          fill="#dc2626"
+          stroke="#ffffff"
+          strokeWidth="2.2"
+          className="drop-shadow-xs"
+        />
+        <circle
+          cx={activePoint.px}
+          cy={activePoint.py}
+          r="11"
+          fill="#dc2626"
+          fillOpacity="0.22"
+        />
+      </g>
     </svg>
   );
 
@@ -718,15 +692,15 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
             {/* 1. Componentes compactos: 1. Endomorfia: 2.7 | 2. Mesomorfia: 6.2 | 3. Ectomorfia: 0.7 */}
             <div className="bg-slate-50 border border-slate-200/90 rounded-lg p-2 flex flex-wrap items-center justify-between sm:justify-start gap-y-1 gap-x-2.5 text-2xs font-extrabold text-slate-800">
               <span className="text-amber-800">
-                1. Endomorfia: <strong className="text-amber-950 font-black">{somatotype.endoFormatted}</strong>
+                1. Endomorfia: <strong className="text-amber-950 font-black">{displayEndo}</strong>
               </span>
               <span className="text-slate-300 font-normal hidden sm:inline">|</span>
               <span className="text-sky-800">
-                2. Mesomorfia: <strong className="text-sky-950 font-black">{somatotype.mesoFormatted}</strong>
+                2. Mesomorfia: <strong className="text-sky-950 font-black">{displayMeso}</strong>
               </span>
               <span className="text-slate-300 font-normal hidden sm:inline">|</span>
               <span className="text-purple-800">
-                3. Ectomorfia: <strong className="text-purple-950 font-black">{somatotype.ectoFormatted}</strong>
+                3. Ectomorfia: <strong className="text-purple-950 font-black">{displayEcto}</strong>
               </span>
             </div>
 
@@ -737,32 +711,31 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
               </div>
               <div className="text-xs sm:text-sm font-black text-indigo-950 flex flex-wrap items-center gap-1.5">
                 <span className="px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-950 border border-indigo-300 font-black">
-                  {somatotype.classification ? somatotype.classification.name : 'Pendiente de cálculo'}
+                  {displayClassName}
                 </span>
                 <span className="text-3xs font-bold text-slate-600">
-                  ({somatotype.endoFormatted} - {somatotype.mesoFormatted} - {somatotype.ectoFormatted})
+                  ({displayEndo} - {displayMeso} - {displayEcto})
                 </span>
               </div>
             </div>
 
             {/* 3. Interpretación funcional */}
-            <div className="space-y-0.5 text-3xs sm:text-2xs">
-              <span className="font-extrabold text-slate-900 block">
+            <div className="space-y-1 text-2xs sm:text-xs">
+              <span className="font-extrabold text-slate-900 block text-xs">
                 Interpretación funcional:
               </span>
-              <p className="text-slate-700 font-medium leading-relaxed">
-                {somatotype.classification?.description ||
-                  'Complete las mediciones antropométricas requeridas para calcular la clasificación y la interpretación funcional.'}
+              <p className="text-slate-700 font-bold leading-relaxed text-[12px] sm:text-[13px]">
+                {displayInterp}
               </p>
             </div>
 
             {/* 4. Frase cualitativa oficial según escalas Heath-Carter (somatotipo.pdf) */}
-            {somatotype.scaleSummaryText && (
+            {displayScaleSummary && (
               <div
                 id="somatotype-scales-summary-text"
-                className="bg-indigo-50/80 border-l-3 border-indigo-600 rounded-r-lg p-2.5 text-2xs text-slate-900 leading-relaxed font-semibold italic shadow-2xs"
+                className="bg-indigo-50/80 border-l-4 border-indigo-600 rounded-r-lg p-3 text-[13px] sm:text-[14px] text-slate-900 leading-relaxed font-bold italic shadow-2xs"
               >
-                &ldquo;{somatotype.scaleSummaryText}&rdquo;
+                &ldquo;{displayScaleSummary}&rdquo;
               </div>
             )}
           </div>
@@ -781,15 +754,9 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
 
             {/* Coordenadas o estado */}
             <div className="flex items-center gap-1.5">
-              {somatotype.x !== null && somatotype.y !== null ? (
-                <span className="text-3xs sm:text-2xs font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-900 border border-indigo-200">
-                  X: {somatotype.x.toFixed(1)} | Y: {somatotype.y.toFixed(1)}
-                </span>
-              ) : (
-                <span className="text-3xs text-slate-400 font-medium">
-                  {somatotype.completedVariablesCount}/10 variables
-                </span>
-              )}
+              <span className="text-3xs sm:text-2xs font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-900 border border-indigo-200">
+                X: {displayX} | Y: {displayY}
+              </span>
 
               {/* Botón de pantalla completa / Zoom */}
               <button
@@ -815,7 +782,7 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
 
           {/* Contenedor del Gráfico Somatograma */}
           <div className="relative w-full my-2 flex justify-center items-center bg-white p-1">
-            {renderSomatochartSvg('somatograma-svg-main', false)}
+            {renderSomatochartSvg('somatocarta-svg-main', false)}
           </div>
 
           {/* Fórmulas matemáticas y referencias inferiores */}
@@ -854,13 +821,11 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
               <div className="flex items-center gap-2">
                 <Crosshair className="w-4 h-4 text-indigo-600" />
                 <span className="text-xs font-extrabold text-slate-900">
-                  Somatograma Oficial Ampliado (Heath-Carter / ISAK)
+                  Somatocarta Oficial Ampliada (Heath-Carter / ISAK)
                 </span>
-                {somatotype.x !== null && somatotype.y !== null && (
-                  <span className="text-3xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900">
-                    X: {somatotype.x.toFixed(1)}, Y: {somatotype.y.toFixed(1)}
-                  </span>
-                )}
+                <span className="text-3xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900">
+                  X: {displayX}, Y: {displayY}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -884,24 +849,22 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
             {/* Contenido del Modal */}
             <div className="p-4 overflow-y-auto flex flex-col items-center justify-center bg-slate-100/50">
               <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm w-full flex justify-center">
-                {renderSomatochartSvg('somatograma-svg-zoom', true)}
+                {renderSomatochartSvg('somatocarta-svg-zoom', true)}
               </div>
 
-              {somatotype.classification && (
-                <div className="mt-3 w-full bg-white p-3 rounded-xl border border-slate-200 text-3xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-slate-800">
-                      Resultado Somatotípico: {somatotype.classification.name}
-                    </span>
-                    <span className="font-mono text-slate-600">
-                      Endomorfia: {somatotype.endoFormatted} | Mesomorfia: {somatotype.mesoFormatted} | Ectomorfia: {somatotype.ectoFormatted}
-                    </span>
-                  </div>
-                  <p className="text-slate-500 leading-relaxed">
-                    {somatotype.classification.description}
-                  </p>
+              <div className="mt-3 w-full bg-white p-3 rounded-xl border border-slate-200 text-3xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-slate-800">
+                    Resultado Somatotípico: {displayClassName}
+                  </span>
+                  <span className="font-mono text-slate-600">
+                    Endomorfia: {displayEndo} | Mesomorfia: {displayMeso} | Ectomorfia: {displayEcto}
+                  </span>
                 </div>
-              )}
+                <p className="text-slate-500 leading-relaxed">
+                  {displayInterp}
+                </p>
+              </div>
             </div>
           </div>
         </div>

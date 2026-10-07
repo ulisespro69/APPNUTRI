@@ -134,12 +134,13 @@ export async function exportPlanToWord(
   const dateStr = patientInfo.date || new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
   const bmiInfo = calculateBmiInfo(patientInfo.height, patientInfo.weight);
   const skinfoldSums = calculateSkinfoldSums(patientInfo.skinfolds);
-  const displayHeight = patientInfo.height
-    ? /\d$/.test(patientInfo.height.trim())
-      ? parseFloat(patientInfo.height) > 3
-        ? `${patientInfo.height.trim()} cm`
-        : `${patientInfo.height.trim()} m`
-      : patientInfo.height
+  const heightStr = patientInfo.height != null ? String(patientInfo.height).trim() : '';
+  const displayHeight = heightStr
+    ? /\d$/.test(heightStr)
+      ? parseFloat(heightStr) > 3
+        ? `${heightStr} cm`
+        : `${heightStr} m`
+      : heightStr
     : '—';
 
   const proteinKcal = Math.round(macros.totalProteinGrams * 4);
@@ -758,7 +759,7 @@ export async function exportPlanToWord(
                 spacing: { before: 20 },
                 children: [
                   new TextRun({
-                    text: patientInfo.weight || '—',
+                    text: patientInfo.weight ? `${patientInfo.weight}` : '—',
                     bold: true,
                     size: 18,
                     color: '0F172A',

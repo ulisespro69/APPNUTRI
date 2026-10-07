@@ -73,30 +73,30 @@ export interface MealPreferences {
 }
 
 export interface SkinfoldMeasurements {
-  triceps?: string;
-  subescapular?: string;
-  biceps?: string;
-  pectoral?: string;
-  axilar?: string;
-  crestaIliaca?: string;
-  supraespinal?: string;
-  abdominal?: string;
-  musloFrontal?: string;
-  pantorrillaMedial?: string;
+  triceps?: string | number;
+  subescapular?: string | number;
+  biceps?: string | number;
+  pectoral?: string | number;
+  axilar?: string | number;
+  crestaIliaca?: string | number;
+  supraespinal?: string | number;
+  abdominal?: string | number;
+  musloFrontal?: string | number;
+  pantorrillaMedial?: string | number;
 }
 
 export interface GirthMeasurements {
-  brazoRelajado?: string;
-  brazoContraido?: string;
-  cinturaMinima?: string;
-  caderasMaximo?: string;
-  pantorrillaMaximo?: string;
+  brazoRelajado?: string | number;
+  brazoContraido?: string | number;
+  cinturaMinima?: string | number;
+  caderasMaximo?: string | number;
+  pantorrillaMaximo?: string | number;
 }
 
 export interface BreadthMeasurements {
-  humeral?: string;
-  biestiloideo?: string;
-  femoral?: string;
+  humeral?: string | number;
+  biestiloideo?: string | number;
+  femoral?: string | number;
 }
 
 export interface SomatotypeData {
@@ -139,22 +139,22 @@ export interface PatientInfo {
   goal: string;
   notes: string;
   gender?: 'Hombre' | 'Mujer' | '' | string;
-  height?: string;
-  weight?: string;
-  age?: string;
+  height?: string | number;
+  weight?: string | number;
+  age?: string | number;
   // Composición corporal (4 componentes)
-  fatPercent?: string;
-  fatKg?: string;
-  musclePercent?: string;
-  muscleKg?: string;
-  bonePercent?: string;
-  boneKg?: string;
-  residualPercent?: string;
-  residualKg?: string;
+  fatPercent?: string | number;
+  fatKg?: string | number;
+  musclePercent?: string | number;
+  muscleKg?: string | number;
+  bonePercent?: string | number;
+  boneKg?: string | number;
+  residualPercent?: string | number;
+  residualKg?: string | number;
   // Pliegues cutáneos, circunferencias y diámetros
   skinfolds?: SkinfoldMeasurements;
-  sumSkinfold3?: string;
-  sumSkinfold6?: string;
+  sumSkinfold3?: string | number;
+  sumSkinfold6?: string | number;
   girths?: GirthMeasurements;
   breadths?: BreadthMeasurements;
   // Somatotipo ISAK (Heath-Carter)

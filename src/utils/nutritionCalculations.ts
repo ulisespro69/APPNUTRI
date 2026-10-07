@@ -2,6 +2,33 @@ import { TableGridState, SMAE_GROUPS, MEAL_COLUMNS } from '../data/smaeData';
 import { MealKey, MacroNutrientSummary, MealOptionLetter, PatientInfo, SkinfoldMeasurements, GirthMeasurements, BreadthMeasurements, ManualNutrientEntry, ProteinSupplementInfo } from '../types';
 import { parseAndScalePortion, getGroupBadgeConfig, detectTrueSMAEGroup, detectIngredientRole } from './smaeRectifier';
 
+/**
+ * Robustly parses a value that can be a string, number, or undefined.
+ * Handles commas as decimal separators and ignores non-numeric characters.
+ */
+function parseVal(val: string | number | undefined | null): number | null {
+  if (val === undefined || val === null || val === '') return null;
+  if (typeof val === 'number') return isNaN(val) ? null : val;
+  try {
+    const cleaned = String(val).replace(',', '.');
+    const match = cleaned.match(/-?\d+(\.\d+)?/);
+    if (!match) return null;
+    const parsed = parseFloat(match[0]);
+    return isNaN(parsed) ? null : parsed;
+  } catch (e) {
+    console.error('Error parsing value:', val, e);
+    return null;
+  }
+}
+
+/**
+ * Parses a value and returns null if it's invalid or <= 0.
+ */
+function parseOrNull(val: string | number | undefined | null): number | null {
+  const v = parseVal(val);
+  return v === null || v <= 0 ? null : v;
+}
+
 export function calculateRowTotal(groupId: string, tableState: TableGridState): number {
   const row = tableState[groupId];
   if (!row) return 0;
@@ -28,13 +55,11 @@ export interface BmiInfo {
   colorClass: string;
 }
 
-export function calculateBmiInfo(heightStr?: string, weightStr?: string): BmiInfo | null {
-  if (!heightStr || !weightStr) return null;
-  const weightMatch = weightStr.replace(',', '.').match(/\d+(\.\d+)?/);
-  const heightMatch = heightStr.replace(',', '.').match(/\d+(\.\d+)?/);
-  if (!weightMatch || !heightMatch) return null;
-  const w = parseFloat(weightMatch[0]);
-  let h = parseFloat(heightMatch[0]);
+export function calculateBmiInfo(heightStr?: string | number, weightStr?: string | number): BmiInfo | null {
+  const w = parseVal(weightStr);
+  let h = parseVal(heightStr);
+  if (w === null || h === null) return null;
+
   if (h > 3) h = h / 100;
   if (h <= 0.5 || h >= 2.6 || w <= 15 || w >= 350) return null;
   const imc = Math.round((w / (h * h)) * 10) / 10;
@@ -97,26 +122,18 @@ export function calculateSkinfoldSums(skinfolds?: SkinfoldMeasurements): Skinfol
     };
   }
 
-  const parseNum = (val?: string): number | null => {
-    if (!val || typeof val !== 'string') return null;
-    const clean = val.replace(',', '.').trim();
-    const n = parseFloat(clean);
-    return isNaN(n) || n <= 0 ? null : n;
-  };
-
-  // Σ3 Pliegues: Subescapular + Supraespinal + Abdominal
-  const sub = parseNum(skinfolds.subescapular);
-  const supra = parseNum(skinfolds.supraespinal);
-  const abd = parseNum(skinfolds.abdominal);
+  const sub = parseVal(skinfolds.subescapular);
+  const supra = parseVal(skinfolds.supraespinal);
+  const abd = parseVal(skinfolds.abdominal);
 
   // Σ4 Pliegues (Durnin & Womersley): Tríceps + Subescapular + Bíceps + Cresta Ilíaca
-  const tri = parseNum(skinfolds.triceps);
-  const bi = parseNum(skinfolds.biceps);
-  const cresta = parseNum(skinfolds.crestaIliaca);
+  const tri = parseVal(skinfolds.triceps);
+  const bi = parseVal(skinfolds.biceps);
+  const cresta = parseVal(skinfolds.crestaIliaca);
 
   // Σ6 Pliegues: Tríceps + Subescapular + Supraespinal + Abdominal + Muslo frontal + Pantorrilla medial
-  const muslo = parseNum(skinfolds.musloFrontal);
-  const pant = parseNum(skinfolds.pantorrillaMedial);
+  const muslo = parseVal(skinfolds.musloFrontal);
+  const pant = parseVal(skinfolds.pantorrillaMedial);
 
   const count3 = (sub !== null ? 1 : 0) + (supra !== null ? 1 : 0) + (abd !== null ? 1 : 0);
   const hasAny3 = count3 > 0;
@@ -180,16 +197,10 @@ export function calculateDurninWomersley(
     return { bodyFatPercent: null, sum4: 0, count4: 0, dc: null, missingText: 'Faltan 4 pliegues' };
   }
 
-  const parseOrNull = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
-
-  const triceps = parseOrNull(skinfolds.triceps);
-  const biceps = parseOrNull(skinfolds.biceps);
-  const subescapular = parseOrNull(skinfolds.subescapular);
-  const crestaIliaca = parseOrNull(skinfolds.crestaIliaca);
+  const triceps = parseVal(skinfolds.triceps);
+  const biceps = parseVal(skinfolds.biceps);
+  const subescapular = parseVal(skinfolds.subescapular);
+  const crestaIliaca = parseVal(skinfolds.crestaIliaca);
 
   const missing: string[] = [];
   if (triceps === null) missing.push('Tríceps');
@@ -241,12 +252,6 @@ export function calculateSloanBurtBlyth(
   skinfolds: SkinfoldMeasurements | undefined,
   gender: string | undefined
 ): { bodyFatPercent: string | null; dc: number | null; isComplete: boolean; missingText: string | null; detailText: string } {
-  const parseOrNull = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
-
   const isMale = gender?.toLowerCase() === 'hombre' || gender?.toLowerCase() === 'masculino' || gender?.toLowerCase() === 'm';
   const isFemale = gender?.toLowerCase() === 'mujer' || gender?.toLowerCase() === 'femenino' || gender?.toLowerCase() === 'f';
 
@@ -292,8 +297,8 @@ export function calculateSloanBurtBlyth(
   } else {
     // Mujer: DC= 1.0764 – 0.00081 (pliegue de cresta iliaca) – 0.00088 (pliegue del tríceps)
     // %GC = 457/DC − 414.2
-    const cresta = parseOrNull(skinfolds?.crestaIliaca);
-    const triceps = parseOrNull(skinfolds?.triceps);
+    const cresta = parseVal(skinfolds?.crestaIliaca);
+    const triceps = parseVal(skinfolds?.triceps);
     const missing: string[] = [];
     if (cresta === null) missing.push('Cresta Ilíaca');
     if (triceps === null) missing.push('Tríceps');
@@ -325,12 +330,6 @@ export function calculateWilmoreBehnke(
   skinfolds: SkinfoldMeasurements | undefined,
   gender: string | undefined
 ): { bodyFatPercent: string | null; dc: number | null; isComplete: boolean; missingText: string | null; detailText: string } {
-  const parseOrNull = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
-
   const isMale = gender?.toLowerCase() === 'hombre' || gender?.toLowerCase() === 'masculino' || gender?.toLowerCase() === 'm';
   const isFemale = gender?.toLowerCase() === 'mujer' || gender?.toLowerCase() === 'femenino' || gender?.toLowerCase() === 'f';
 
@@ -376,9 +375,9 @@ export function calculateWilmoreBehnke(
   } else {
     // Mujer: DC= 1.06234 – 0.00068 (pliegue de subescapular) – 0.00039 (pliegue de tríceps) – 0.00025 (pliegue de muslo frontal)
     // %GC = 495/DC – 450
-    const sub = parseOrNull(skinfolds?.subescapular);
-    const triceps = parseOrNull(skinfolds?.triceps);
-    const muslo = parseOrNull(skinfolds?.musloFrontal);
+    const sub = parseVal(skinfolds?.subescapular);
+    const triceps = parseVal(skinfolds?.triceps);
+    const muslo = parseVal(skinfolds?.musloFrontal);
     const missing: string[] = [];
     if (sub === null) missing.push('Subescapular');
     if (triceps === null) missing.push('Tríceps');
@@ -410,18 +409,12 @@ export function calculateWilmoreBehnke(
 export function calculateJacksonPollock(
   skinfolds: SkinfoldMeasurements | undefined,
   gender: string | undefined,
-  ageStr: string | undefined
+  ageStr: string | number | undefined
 ): { bodyFatPercent: string | null; dc: number | null; isComplete: boolean; missingText: string | null; detailText: string } {
-  const parseOrNull = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
-
   const isMale = gender?.toLowerCase() === 'hombre' || gender?.toLowerCase() === 'masculino' || gender?.toLowerCase() === 'm';
   const isFemale = gender?.toLowerCase() === 'mujer' || gender?.toLowerCase() === 'femenino' || gender?.toLowerCase() === 'f';
-  const age = ageStr ? parseFloat(ageStr.replace(',', '.')) : NaN;
-  const hasValidAge = !isNaN(age) && age > 0;
+  const age = parseVal(ageStr) || 0;
+  const hasValidAge = age > 0;
 
   if (!isMale && !isFemale) {
     return {
@@ -437,13 +430,13 @@ export function calculateJacksonPollock(
     // Hombre: DC= 1.112 - 0.00043499*(Pectoral + Axilar + Tríceps + Subescapular + Abdominal + Cresta Iliaca + Muslo Frontal)
     // + 0.00000055*(suma)^2 - 0.00028826*EDAD
     // %GC= (495 / Resultado) – 450
-    const pectoral = parseOrNull(skinfolds?.pectoral);
-    const axilar = parseOrNull(skinfolds?.axilar);
-    const triceps = parseOrNull(skinfolds?.triceps);
-    const sub = parseOrNull(skinfolds?.subescapular);
-    const abdominal = parseOrNull(skinfolds?.abdominal);
-    const cresta = parseOrNull(skinfolds?.crestaIliaca);
-    const muslo = parseOrNull(skinfolds?.musloFrontal);
+    const pectoral = parseVal(skinfolds?.pectoral);
+    const axilar = parseVal(skinfolds?.axilar);
+    const triceps = parseVal(skinfolds?.triceps);
+    const sub = parseVal(skinfolds?.subescapular);
+    const abdominal = parseVal(skinfolds?.abdominal);
+    const cresta = parseVal(skinfolds?.crestaIliaca);
+    const muslo = parseVal(skinfolds?.musloFrontal);
 
     const missing: string[] = [];
     if (pectoral === null) missing.push('Pectoral');
@@ -480,10 +473,10 @@ export function calculateJacksonPollock(
     // Mujeres: DC= 1.096095 - 0.0006952*(Tríceps + Cresta Iliaca + Abdominal + Muslo Frontal)
     // + 0.0000011*(suma)^2 - 0.0000714*EDAD
     // %GC= (495 / Resultado) – 450
-    const triceps = parseOrNull(skinfolds?.triceps);
-    const cresta = parseOrNull(skinfolds?.crestaIliaca);
-    const abdominal = parseOrNull(skinfolds?.abdominal);
-    const muslo = parseOrNull(skinfolds?.musloFrontal);
+    const triceps = parseVal(skinfolds?.triceps);
+    const cresta = parseVal(skinfolds?.crestaIliaca);
+    const abdominal = parseVal(skinfolds?.abdominal);
+    const muslo = parseVal(skinfolds?.musloFrontal);
 
     const missing: string[] = [];
     if (triceps === null) missing.push('Tríceps');
@@ -518,7 +511,7 @@ export function calculateJacksonPollock(
 
 export function calculateLewis(
   skinfolds: SkinfoldMeasurements | undefined,
-  heightStr: string | undefined,
+  heightStr: string | number | undefined,
   girths: GirthMeasurements | undefined,
   gender?: string | undefined
 ): { bodyFatPercent: string | null; dc: number | null; isComplete: boolean; missingText: string | null; detailText: string } {
@@ -549,16 +542,10 @@ export function calculateLewis(
     };
   }
 
-  const parseOrNull = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
-
-  const triceps = parseOrNull(skinfolds?.triceps);
-  const sub = parseOrNull(skinfolds?.subescapular);
-  const rawHeight = parseOrNull(heightStr);
-  const brazo = parseOrNull(girths?.brazoRelajado);
+  const triceps = parseVal(skinfolds?.triceps);
+  const sub = parseVal(skinfolds?.subescapular);
+  const rawHeight = parseVal(heightStr);
+  const brazo = parseVal(girths?.brazoRelajado);
 
   const missing: string[] = [];
   if (triceps === null) missing.push('Tríceps');
@@ -595,12 +582,6 @@ export function calculateThorland(
   gender: string | undefined
 ): { bodyFatPercent: string | null; dc: number | null; isComplete: boolean; missingText: string | null; detailText: string } {
   // Thorland
-  const parseOrNull = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
-
   const isMale = gender?.toLowerCase() === 'hombre' || gender?.toLowerCase() === 'masculino' || gender?.toLowerCase() === 'm';
   const isFemale = gender?.toLowerCase() === 'mujer' || gender?.toLowerCase() === 'femenino' || gender?.toLowerCase() === 'f';
 
@@ -659,9 +640,9 @@ export function calculateThorland(
   } else {
     // DC Mujeres: 1.0987 – 0.00122(tríceps + subescapular + cresta iliaca) + 0.00000263(suma)^2
     // %GC= (4.95/DC – 4.50) x100
-    const triceps = parseOrNull(skinfolds?.triceps);
-    const sub = parseOrNull(skinfolds?.subescapular);
-    const cresta = parseOrNull(skinfolds?.crestaIliaca);
+    const triceps = parseVal(skinfolds?.triceps);
+    const sub = parseVal(skinfolds?.subescapular);
+    const cresta = parseVal(skinfolds?.crestaIliaca);
 
     const missing: string[] = [];
     if (triceps === null) missing.push('Tríceps');
@@ -723,16 +704,10 @@ export function calculateForsyth(
     };
   }
 
-  const parseOrNull = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
-
-  const sub = parseOrNull(skinfolds?.subescapular);
-  const abdominal = parseOrNull(skinfolds?.abdominal);
-  const triceps = parseOrNull(skinfolds?.triceps);
-  const axilar = parseOrNull(skinfolds?.axilar);
+  const sub = parseVal(skinfolds?.subescapular);
+  const abdominal = parseVal(skinfolds?.abdominal);
+  const triceps = parseVal(skinfolds?.triceps);
+  const axilar = parseVal(skinfolds?.axilar);
 
   const missing: string[] = [];
   if (sub === null) missing.push('Subescapular');
@@ -769,11 +744,6 @@ export function calculateYuhasz(
   // Yuhasz:
   // Hombres: Porcentaje de grasa corporal (%) = (0.1051 x suma de todos los pliegues cutáneos) + 2.585
   // Mujeres: Porcentaje de grasa corporal (%) = (0.1548 x (Tríceps + subescapular + abdominal + suprailíaco + muslo + pantorrilla) + 3.580
-  const parseOrNull = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
 
   const isMale = gender?.toLowerCase() === 'hombre' || gender?.toLowerCase() === 'masculino' || gender?.toLowerCase() === 'm';
   const isFemale = gender?.toLowerCase() === 'mujer' || gender?.toLowerCase() === 'femenino' || gender?.toLowerCase() === 'f';
@@ -818,9 +788,9 @@ export function calculateYuhasz(
 
   if (isMale) {
     // Si están presentes los demás pliegues (bíceps, pectoral, axilar), se suman al total de pliegues
-    const biceps = parseOrNull(skinfolds?.biceps) ?? 0;
-    const pectoral = parseOrNull(skinfolds?.pectoral) ?? 0;
-    const axilar = parseOrNull(skinfolds?.axilar) ?? 0;
+    const biceps = parseVal(skinfolds?.biceps) ?? 0;
+    const pectoral = parseVal(skinfolds?.pectoral) ?? 0;
+    const axilar = parseVal(skinfolds?.axilar) ?? 0;
     const totalSum = sum6 + biceps + pectoral + axilar;
     fatPercent = (0.1051 * totalSum) + 2.585;
   } else {
@@ -853,16 +823,10 @@ export function calculateBoneMassRocha(
 ): BoneMassEstimation {
   // ROCHA (1975):
   // MO = (Estatura en mts² X Diámetro del fémur en mts X Diámetro estiloideo en mts X 400)⁰.⁷¹² X 3.02
-  const parseNum = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
-
-  const rawHeight = parseNum(heightStr);
-  const rawFemur = parseNum(breadths?.femoral);
-  const rawEstiloideo = parseNum(breadths?.biestiloideo);
-  const rawWeight = parseNum(weightStr);
+  const rawHeight = parseOrNull(heightStr);
+  const rawFemur = parseOrNull(breadths?.femoral);
+  const rawEstiloideo = parseOrNull(breadths?.biestiloideo);
+  const rawWeight = parseOrNull(weightStr);
 
   const missing: string[] = [];
   if (rawHeight === null) missing.push('Estatura');
@@ -943,7 +907,7 @@ export interface ResidualMassEstimation {
 
 export function calculateResidualMass(
   gender?: string | undefined,
-  weightStr?: string | undefined
+  weightStr?: string | number | undefined
 ): ResidualMassEstimation {
   // Estimación Antropométrica de la Masa Residual (Würch):
   // Hombres: 24% del peso corporal
@@ -963,9 +927,9 @@ export function calculateResidualMass(
   }
 
   const targetPercent = isMale ? 24 : 21;
-  const rawWeight = weightStr ? parseFloat(weightStr.replace(',', '.')) : null;
+  const rawWeight = parseOrNull(weightStr);
 
-  if (!rawWeight || isNaN(rawWeight) || rawWeight <= 0) {
+  if (!rawWeight) {
     return {
       residualKg: null,
       residualPercent: targetPercent.toString(),
@@ -996,24 +960,18 @@ export interface MuscleMassEstimation {
 }
 
 export function calculateMuscleMass(
-  fatPercentStr: string | undefined,
-  bonePercentStr: string | undefined,
-  residualPercentStr: string | undefined,
-  weightStr?: string | undefined
+  fatPercentStr: string | number | undefined,
+  bonePercentStr: string | number | undefined,
+  residualPercentStr: string | number | undefined,
+  weightStr?: string | number | undefined
 ): MuscleMassEstimation {
   // Estimación Antropométrica de la Masa Muscular:
   // Masa Muscular = 100 - (Porcentaje de masa grasa corporal + Porcentaje masa ósea + Porcentaje masa residual)
   // Conversión a kg: (Porcentaje de Masa Muscular * Masa corporal) / 100
-  const parseNum = (val?: string) => {
-    if (!val) return null;
-    const parsed = parseFloat(val.replace(',', '.'));
-    return isNaN(parsed) || parsed < 0 ? null : parsed;
-  };
-
-  const fatPct = parseNum(fatPercentStr);
-  const bonePct = parseNum(bonePercentStr);
-  const resPct = parseNum(residualPercentStr);
-  const rawWeight = parseNum(weightStr);
+  const fatPct = parseOrNull(fatPercentStr);
+  const bonePct = parseOrNull(bonePercentStr);
+  const resPct = parseOrNull(residualPercentStr);
+  const rawWeight = parseOrNull(weightStr);
 
   const missing: string[] = [];
   if (fatPct === null) missing.push('% Grasa');
@@ -1080,21 +1038,13 @@ export interface WeightStrategyResult {
 }
 
 export function calculateWeightsByStrategy(
-  heightStr?: string,
-  weightStr?: string,
+  heightStr?: string | number,
+  weightStr?: string | number,
   gender?: string,
   preferredStrategy: 'real' | 'ideal' | 'adjusted' = 'real'
 ): WeightStrategyResult {
-  const parseNum = (val?: string) => {
-    if (!val) return null;
-    const clean = val.replace(',', '.').match(/\d+(\.\d+)?/);
-    if (!clean) return null;
-    const parsed = parseFloat(clean[0]);
-    return isNaN(parsed) || parsed <= 0 ? null : parsed;
-  };
-
-  const realWeight = parseNum(weightStr);
-  const rawHeight = parseNum(heightStr);
+  const realWeight = parseOrNull(weightStr);
+  const rawHeight = parseOrNull(heightStr);
   let heightM: number | null = null;
   if (rawHeight) {
     heightM = rawHeight > 3 ? rawHeight / 100 : rawHeight;
@@ -1216,15 +1166,9 @@ export function calculateHarrisBenedict(
     preferredStrategy
   );
 
-  const cleanNum = (str?: string) => {
-    if (!str) return null;
-    const match = str.replace(',', '.').match(/\d+(\.\d+)?/);
-    return match ? parseFloat(match[0]) : null;
-  };
-
-  const rawHeight = cleanNum(patient.height);
+  const rawHeight = parseVal(patient.height);
   const heightCm = rawHeight && rawHeight < 3 ? rawHeight * 100 : rawHeight;
-  const ageYears = cleanNum(patient.age);
+  const ageYears = parseVal(patient.age);
   const weightKg = weightDetails.weightUsed;
 
   const activityObj =
@@ -1314,8 +1258,8 @@ export function calculateMifflinStJeor(
     preferredStrategy
   );
 
-  const cleanNum = (str?: string) => {
-    if (!str) return null;
+  const cleanNum = (str?: string | number) => {
+    if (str === undefined || str === null || str === '') return null;
     const clean = str.toString().trim().replace(',', '.');
     const match = clean.match(/\d+(\.\d+)?/);
     return match ? parseFloat(match[0]) : null;
@@ -1418,8 +1362,8 @@ export function calculateKatchMcArdle(
     preferredStrategy
   );
 
-  const cleanNum = (str?: string) => {
-    if (!str) return null;
+  const cleanNum = (str?: string | number) => {
+    if (str === undefined || str === null || str === '') return null;
     const clean = str.toString().trim().replace(',', '.');
     const match = clean.match(/\d+(\.\d+)?/);
     return match ? parseFloat(match[0]) : null;
@@ -1511,8 +1455,8 @@ export function calculateCunningham(
     preferredStrategy
   );
 
-  const cleanNum = (str?: string) => {
-    if (!str) return null;
+  const cleanNum = (str?: string | number) => {
+    if (str === undefined || str === null || str === '') return null;
     const clean = str.toString().trim().replace(',', '.');
     const match = clean.match(/\d+(\.\d+)?/);
     return match ? parseFloat(match[0]) : null;
@@ -1609,8 +1553,8 @@ export function getAllBodyFatEstimations(
 ): BodyFatFormulaInfo[] {
   let skinfolds: SkinfoldMeasurements | undefined;
   let gender: string | undefined;
-  let age: string | undefined;
-  let height: string | undefined;
+  let age: string | number | undefined;
+  let height: string | number | undefined;
   let girths: GirthMeasurements | undefined;
 
   if (patientOrSkinfolds && 'name' in patientOrSkinfolds) {

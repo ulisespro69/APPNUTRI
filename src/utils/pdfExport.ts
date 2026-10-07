@@ -384,12 +384,13 @@ export async function exportPlanToPdfNative(
     checkPageBreak(unifiedTableHeight + 2.5);
 
     const bmiInfo = calculateBmiInfo(patientInfo.height, patientInfo.weight);
-    const displayHeight = patientInfo.height
-      ? /\d$/.test(patientInfo.height.trim())
-        ? parseFloat(patientInfo.height) > 3
-          ? `${patientInfo.height.trim()} cm`
-          : `${patientInfo.height.trim()} m`
-        : patientInfo.height
+    const hStr = String(patientInfo.height || '').trim();
+    const displayHeight = hStr
+      ? /\d$/.test(hStr)
+        ? parseFloat(hStr.replace(',', '.')) > 3
+          ? `${hStr} cm`
+          : `${hStr} m`
+        : hStr
       : '—';
 
   // Contenedor principal de la tabla unificada
@@ -656,7 +657,7 @@ export async function exportPlanToPdfNative(
     doc.setLineWidth(0.3);
     doc.roundedRect(margin, y, contentWidth, somatoH, 1.5, 1.5, 'FD');
 
-    // Barra de título del Somatotipo (sin la palabra ISAK ni somatograma.jpg)
+    // Barra de título del Somatotipo
     doc.setFillColor(67, 56, 202); // indigo-700
     doc.roundedRect(margin, y, contentWidth, 4.5, 1.5, 1.5, 'F');
     doc.rect(margin, y + 2, contentWidth, 2.5, 'F');
