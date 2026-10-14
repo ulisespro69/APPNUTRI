@@ -153,9 +153,9 @@ export function generateSomatocartaSvgString(
     patientMarkerSvg = `
       <!-- Marcador del paciente: punto aumentado y de alta visibilidad para descargas (Word, PDF) -->
       <g id="patient-marker">
-        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="18" fill="#dc2626" fill-opacity="0.28" />
-        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="11" fill="#dc2626" stroke="#ffffff" stroke-width="3" />
-        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="3.5" fill="#ffffff" />
+        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="22" fill="#dc2626" fill-opacity="0.3" />
+        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="14" fill="#dc2626" stroke="#ffffff" stroke-width="3.5" />
+        <circle cx="${patientPoint.px.toFixed(1)}" cy="${patientPoint.py.toFixed(1)}" r="4.5" fill="#ffffff" />
       </g>
     `;
   } else {

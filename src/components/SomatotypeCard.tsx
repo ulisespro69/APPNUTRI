@@ -482,30 +482,30 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
       {/* Marcador del Paciente: Solo se grafica si existen coordenadas del paciente */}
       {patientPoint ? (
         <g id="patient-marker" className="transition-all duration-300">
-          {/* Halo exterior reflectante */}
+          {/* Halo exterior reflectante aumentado */}
           <circle
             cx={patientPoint.px}
             cy={patientPoint.py}
-            r="18"
+            r="22"
             fill="#dc2626"
-            fillOpacity="0.25"
+            fillOpacity="0.3"
             className="animate-pulse"
           />
           {/* Círculo principal rojo vivo de mayor calibre con borde blanco */}
           <circle
             cx={patientPoint.px}
             cy={patientPoint.py}
-            r="11"
+            r="14"
             fill="#dc2626"
             stroke="#ffffff"
-            strokeWidth="3"
+            strokeWidth="3.5"
             className="drop-shadow-md"
           />
           {/* Punto central de mira blanca de alto contraste */}
           <circle
             cx={patientPoint.px}
             cy={patientPoint.py}
-            r="3.5"
+            r="4.5"
             fill="#ffffff"
           />
         </g>
