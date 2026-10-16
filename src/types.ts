@@ -91,6 +91,7 @@ export interface GirthMeasurements {
   cinturaMinima?: string | number;
   caderasMaximo?: string | number;
   pantorrillaMaximo?: string | number;
+  muslo?: string | number;
 }
 
 export interface BreadthMeasurements {
@@ -157,6 +158,10 @@ export interface PatientInfo {
   sumSkinfold6?: string | number;
   girths?: GirthMeasurements;
   breadths?: BreadthMeasurements;
+  // Fórmula de Lee et al. (2000) para Masa Muscular
+  useLeeFormula?: boolean;
+  ethnicity?: 'caucasico' | 'afrodescendiente' | 'asiatico' | string;
+  showThighGirthOption?: boolean;
   // Somatotipo ISAK (Heath-Carter)
   somatotype?: SomatotypeData;
   preferredFoods?: string;

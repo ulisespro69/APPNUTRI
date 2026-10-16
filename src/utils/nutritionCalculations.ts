@@ -1008,6 +1008,175 @@ export function calculateMuscleMass(
 }
 
 // ==========================================
+// FÓRMULA DE MASA MUSCULAR DE LEE ET AL. (2000)
+// H × (0,00744 × CAG² + 0,00088 × CTG² + 0,00441 × CCG²) + 2,4 × sexo − 0,048 × edad + raza + 7,8
+// ==========================================
+
+export interface LeeMuscleMassEstimation {
+  muscleKg: string | null;
+  musclePercent: string | null;
+  isComplete: boolean;
+  missingVariables: string[];
+  missingText: string | null;
+  detailText: string;
+  cag: number | null;
+  ctg: number | null;
+  ccg: number | null;
+  heightM: number | null;
+  sexValue: number | null;
+  ageValue: number | null;
+  raceValue: number;
+  totalKgNum: number | null;
+}
+
+export function calculateLeeMuscleMass(
+  patientInfo: {
+    height?: string | number;
+    weight?: string | number;
+    age?: string | number;
+    gender?: string;
+    ethnicity?: string;
+    girths?: {
+      brazoRelajado?: string | number;
+      muslo?: string | number;
+      pantorrillaMaximo?: string | number;
+    };
+    skinfolds?: {
+      triceps?: string | number;
+      musloFrontal?: string | number;
+      pantorrillaMedial?: string | number;
+    };
+  }
+): LeeMuscleMassEstimation {
+  const missing: string[] = [];
+
+  // 1. Estatura H en metros
+  const rawHeight = parseOrNull(patientInfo.height);
+  let heightM: number | null = null;
+  if (rawHeight !== null && rawHeight > 0) {
+    heightM = rawHeight > 3 ? rawHeight / 100 : rawHeight;
+  } else {
+    missing.push('Estatura (m)');
+  }
+
+  // 2. Sexo: 0 para mujeres, 1 para hombres
+  const rawGender = String(patientInfo.gender || '').trim().toLowerCase();
+  let sexValue: number | null = null;
+  if (rawGender.startsWith('h') || rawGender === '1' || rawGender === 'hombre' || rawGender === 'masculino') {
+    sexValue = 1;
+  } else if (rawGender.startsWith('m') || rawGender === '0' || rawGender === 'mujer' || rawGender === 'femenino') {
+    sexValue = 0;
+  } else {
+    missing.push('Sexo (Hombre/Mujer)');
+  }
+
+  // 3. Edad (años)
+  const rawAge = parseOrNull(patientInfo.age);
+  let ageValue: number | null = null;
+  if (rawAge !== null && rawAge > 0) {
+    ageValue = rawAge;
+  } else {
+    missing.push('Edad');
+  }
+
+  // 4. Etnia / Raza: Caucásico: 0, Afrodescendiente: +1, Asiático / Ansiático: -1.2
+  const rawEthnicity = String(patientInfo.ethnicity || '').trim().toLowerCase();
+  let raceValue = 0;
+  if (rawEthnicity.includes('afro') || rawEthnicity.includes('negro') || rawEthnicity.includes('black')) {
+    raceValue = 1;
+  } else if (rawEthnicity.includes('asia') || rawEthnicity.includes('ansia')) {
+    raceValue = -1.2;
+  } else {
+    raceValue = 0; // Caucásico / general por defecto
+  }
+
+  // 5. CAG = brazo relajado (cm) − π × pliegue de tríceps (mm) / 10
+  const brazoRelajado = parseOrNull(patientInfo.girths?.brazoRelajado);
+  const pliegueTriceps = parseOrNull(patientInfo.skinfolds?.triceps);
+  let cag: number | null = null;
+  if (brazoRelajado === null) missing.push('Brazo relajado (cm)');
+  if (pliegueTriceps === null) missing.push('Pliegue tríceps (mm)');
+  if (brazoRelajado !== null && pliegueTriceps !== null) {
+    cag = Math.max(0, brazoRelajado - (Math.PI * pliegueTriceps) / 10);
+  }
+
+  // 6. CTG = circunferencia de muslo (cm) − π × pliegue de muslo (mm) / 10
+  const circMuslo = parseOrNull(patientInfo.girths?.muslo);
+  const pliegueMuslo = parseOrNull(patientInfo.skinfolds?.musloFrontal);
+  let ctg: number | null = null;
+  if (circMuslo === null) missing.push('Circunf. muslo (cm)');
+  if (pliegueMuslo === null) missing.push('Pliegue muslo (mm)');
+  if (circMuslo !== null && pliegueMuslo !== null) {
+    ctg = Math.max(0, circMuslo - (Math.PI * pliegueMuslo) / 10);
+  }
+
+  // 7. CCG = pantorrilla máxima (cm) − π × pliegue de pantorrilla (mm) / 10
+  const pantorrillaMax = parseOrNull(patientInfo.girths?.pantorrillaMaximo);
+  const plieguePantorrilla = parseOrNull(patientInfo.skinfolds?.pantorrillaMedial);
+  let ccg: number | null = null;
+  if (pantorrillaMax === null) missing.push('Pantorrilla máx. (cm)');
+  if (plieguePantorrilla === null) missing.push('Pliegue pantorrilla (mm)');
+  if (pantorrillaMax !== null && plieguePantorrilla !== null) {
+    ccg = Math.max(0, pantorrillaMax - (Math.PI * plieguePantorrilla) / 10);
+  }
+
+  const rawWeight = parseOrNull(patientInfo.weight);
+
+  if (missing.length > 0 || heightM === null || sexValue === null || ageValue === null || cag === null || ctg === null || ccg === null) {
+    return {
+      muscleKg: null,
+      musclePercent: null,
+      isComplete: false,
+      missingVariables: missing,
+      missingText: `Faltan datos: ${missing.join(', ')}`,
+      detailText: 'H × (0.00744×CAG² + 0.00088×CTG² + 0.00441×CCG²) + 2.4×sexo − 0.048×edad + raza + 7.8',
+      cag,
+      ctg,
+      ccg,
+      heightM,
+      sexValue,
+      ageValue,
+      raceValue,
+      totalKgNum: null,
+    };
+  }
+
+  // Cálculo según la fórmula de Lee et al. (2000):
+  // H × (0,00744 × CAG² + 0,00088 × CTG² + 0,00441 × CCG²) + 2,4 × sexo − 0,048 × edad + raza + 7,8
+  const cag2 = cag * cag;
+  const ctg2 = ctg * ctg;
+  const ccg2 = ccg * ccg;
+  const termMuscle = heightM * (0.00744 * cag2 + 0.00088 * ctg2 + 0.00441 * ccg2);
+  const totalKg = termMuscle + (2.4 * sexValue) - (0.048 * ageValue) + raceValue + 7.8;
+  const validTotalKg = Math.max(0, totalKg);
+
+  const muscleKg = validTotalKg.toFixed(2);
+  let musclePercent: string | null = null;
+  if (rawWeight !== null && rawWeight > 0) {
+    musclePercent = ((validTotalKg / rawWeight) * 100).toFixed(1);
+  }
+
+  const raceLabel = raceValue === 1 ? 'Afrodescendiente (+1)' : raceValue === -1.2 ? 'Asiático (-1.2)' : 'Caucásico (0)';
+
+  return {
+    muscleKg,
+    musclePercent,
+    isComplete: true,
+    missingVariables: [],
+    missingText: rawWeight ? null : 'Falta peso para calcular %',
+    detailText: `Lee et al.: ${muscleKg} kg${musclePercent ? ` (${musclePercent}%)` : ''} • Etnia: ${raceLabel}`,
+    cag: parseFloat(cag.toFixed(2)),
+    ctg: parseFloat(ctg.toFixed(2)),
+    ccg: parseFloat(ccg.toFixed(2)),
+    heightM: parseFloat(heightM.toFixed(2)),
+    sexValue,
+    ageValue,
+    raceValue,
+    totalKgNum: validTotalKg,
+  };
+}
+
+// ==========================================
 // FÓRMULA DE CONTEO CALÓRICO: HARRIS-BENEDICT
 // Deportistas, verificación cruzada
 // ==========================================

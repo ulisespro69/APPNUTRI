@@ -342,16 +342,35 @@ CONGRUENCIA CULINARIA ESTRICTA POR TIEMPO DE COMIDA:
 - Colación Vespertina (Colación 2): Snack saciante para evitar hambre nocturna (frutas frescas con semillas, pepino y jícama con limón y chile piquín, tostadas horneadas con requesón, yogur bebible natural).
 - Cena: Preparación ligera, reconfortante y de fácil digestión (queso panela al comal, sincronizadas ligeras de maíz con espinacas, tostadas horneadas con atún preparado o salpicón ligero de pollo, claras con champiñones, pan integral con requesón y aguacate). Evitar carnes rojas pesadas o frituras.
 
-ROTACIÓN Y DIVERSIDAD OBLIGATORIA ENTRE LAS 3 OPCIONES:
-- Opción A: Tradicional casera nutritiva al comal o en guisado ligero mexicano.
-- Opción B: Opción fresca, ensalada, bowl saludable o preparación práctica de rápida elaboración.
-- Opción C: Opción creativa, sandwich gourmet saludable, tostadas horneadas o combinación innovadora con técnica culinaria diferenciada.
-- NUNCA repitas el mismo ingrediente proteico principal (ej. pollo en A y pollo en B está TERMINANTEMENTE PROHIBIDO).
-- Rota cereales y verduras entre las 3 opciones para dar al paciente una experiencia gastronómica rica y estimulante.
-- Si se prescriben 2 o más equivalentes de Aceite sin Proteína: usa 1 eq para la cocción (aceite) y el resto como ingrediente de mesa delicioso (aguacate Hass, crema fresca o aceitunas). Nunca añadas aceite crudo a platillos donde no armoniza.
-- Multiplica la porción por el número de equivalentes asignados con exactitud de SMAE 5ta edición.`;
+REGLAS CRÍTICAS DE SENTIDO COMÚN CULINARIO Y ALIMENTOS BÁSICOS FÁCILES DE REALIZAR:
+1. PLATILLOS BÁSICOS, PRÁCTICOS Y DE FÁCIL ELABORACIÓN:
+   - Genera recetas cotidianas, sencillas y con sentido común culinario mexicano.
+2. PROHIBICIÓN ABSOLUTA DE HARINAS CRUDAS EN PLATILLOS TERMINADOS:
+   - Jamás uses harinas crudas (harina de maíz nixtamalizada, Maseca, harina de trigo, fécula de maíz o maicena) con pollo, pechuga, bistec, pescado, huevo, cerdo o queso. En un menú terminado los cereales deben ser alimentos listos para consumir: tortillas de maíz comaleadas, arroz al vapor, papas cocidas al vapor, tostadas horneadas sin freír, avena en hojuelas o pan integral.
+3. PROHIBICIÓN DE SEMILLAS DE CALABAZA CON PAN TOSTADO:
+   - No tiene sentido agregar semillas de calabaza (pepitas) sobre pan tostado o sándwiches.
+   - Si el menú lleva pan tostado o pan integral y se prescriben Aceites con proteína, usa crema de cacahuate 100% natural sin azúcar para untar en el pan, o sirve almendras/nueces para acompañar por separado con fruta o yogur. NUNCA pongas pepitas de calabaza sobre pan tostado.
+4. CUIDADO ESTRICTO CON LOS GRUPOS DE EQUIVALENTES (CERO CONFUSIÓN):
+   - "Aceites con proteína" = ÚNICAMENTE frutos secos y semillas (almendras, nueces, cacahuates, pepitas de calabaza, chía, ajonjolí, pistaches, crema de cacahuate sin azúcar). NUNCA aceites líquidos ni aguacate.
+   - "Aceites sin proteína" = Grasas puras (aceite de oliva, aceite vegetal para cocinar, aguacate Hass, aceitunas, crema fresca, mayonesa, mantequilla). NUNCA nueces ni semillas.
+   - "Azúcares sin grasa" = Miel de abeja pura, mermelada de fruta casera, azúcar mascabado, gelatina baja en calorías. NUNCA chocolates, nieve de crema ni pasteles.
+   - "Azúcares con grasa" = Chocolate amargo 70-85% cacao, chocolate con leche, mazapán de cacahuate, nutella, helado de crema.
+5. ROTACIÓN Y DIVERSIDAD OBLIGATORIA ENTRE LAS 3 OPCIONES:
+   - Opción A: Tradicional casera nutritiva al comal o en guisado ligero mexicano.
+   - Opción B: Opción fresca, ensalada, bowl saludable o preparación práctica de rápida elaboración.
+   - Opción C: Opción creativa, sandwich gourmet saludable, tostadas horneadas o combinación innovadora con técnica culinaria diferenciada.
+   - NUNCA repitas el mismo ingrediente proteico principal (ej. pollo en A y pollo en B está TERMINANTEMENTE PROHIBIDO).
+   - Rota cereales y verduras entre las 3 opciones para dar al paciente una experiencia gastronómica rica y estimulante.
+   - Si se prescriben 2 o más equivalentes de Aceite sin Proteína: usa 1 eq para la cocción (aceite) y el resto como ingrediente de mesa delicioso (aguacate Hass, crema fresca o aceitunas). Nunca añadas aceite crudo a platillos donde no armoniza.
+   - Multiplica la porción por el número de equivalentes asignados con exactitud de SMAE 5ta edición.`;
 
     let preferencesText = '';
+    if (req.body.likedFoods && Array.isArray(req.body.likedFoods) && req.body.likedFoods.length > 0) {
+      preferencesText += `\n\n⭐ BANCO DE MENÚS Y ALIMENTOS FAVORITOS PREVIAMENTE APROBADOS POR EL USUARIO:
+Los siguientes alimentos e ideas han sido seleccionados y disfrutados con éxito por el usuario en sus procesos previos: ${req.body.likedFoods.join(', ')}.
+Úsalos como inspiración culinaria probada y sostenible para estructurar preparaciones deliciosas y cotidianas que agradan al paciente.`;
+    }
+
     if (req.body.previousOptionHistory) {
       const historySummary: Record<string, string[]> = {};
       Object.entries(req.body.previousOptionHistory).forEach(([meal, options]: [string, any]) => {
@@ -636,7 +655,10 @@ REGLAS DE ORO:
    - Opción B: Opción fresca, ensalada, bowl o preparación práctica.
    - Opción C: Opción creativa, sándwich gourmet saludable o tostadas horneadas.
    - Cada opción debe tener un ingrediente proteico y técnica culinaria diferente.
-3. DISTINCIÓN EXACTA DE GRUPOS SMAE:
+3. SENTIDO COMÚN CULINARIO Y ALIMENTOS FÁCILES DE REALIZAR:
+   - PROHIBIDO harinas crudas (harina de maíz nixtamalizada, Maseca, harina de trigo, fécula, maicena) con pollo, bistec, pescado, huevo o queso. Usa tortillas al comal, arroz al vapor, papas cocidas, tostadas horneadas o pan integral.
+   - PROHIBIDO semillas de calabaza (pepitas) sobre pan tostado o sándwiches. Si hay pan y Aceites con proteína, usa crema de cacahuate natural sin azúcar para untar en el pan, o sirve almendras/nueces para acompañar por separado con fruta o yogur.
+4. DISTINCIÓN EXACTA DE GRUPOS SMAE (CERO CONFUSIÓN):
    - "Aceites con proteína": Oleaginosas y semillas (Almendras, nuez, cacahuates, pepitas, chía, ajonjolí, pistaches, crema de cacahuate sin azúcar). NUNCA aceites líquidos ni aguacate. Deben usarse como TOPPING crujiente para coronar avena, fruta, ensaladas o yogur; NUNCA para cocinar o freír.
    - "Aceite sin Proteína": Aceite de oliva, vegetal, aguacate Hass, aceitunas, crema, mayonesa, mantequilla. NUNCA nueces ni semillas. Si es para cocinar, nombrarlo como "(para cocinar / en la preparación)".
    - "Azúcares sin grasa": Miel de abeja pura, mermelada, azúcar mascabado, gelatina. NUNCA chocolates, nieve de crema ni pastel.
@@ -644,17 +666,20 @@ REGLAS DE ORO:
    - "Jamón y derivados cárnicos": Son AOA (Alimento de Origen Animal), NUNCA sazón ni libre ni verdura.
    - "Cereales con grasa": Granola, galleta de avena casera, puré de papa con mantequilla, pan dulce.
    - "Cereales sin grasa": Tortilla de maíz, arroz al vapor, papa cocida o al vapor con piel, avena en hojuelas, pan integral, tostadas horneadas.
-4. REGLA ESTRICTA DE EXCLUSIÓN TOTAL: EVITAR TOTALMENTE LAS SEMILLAS DE GIRASOL (PIPAS):
+5. REGLA ESTRICTA DE EXCLUSIÓN TOTAL: EVITAR TOTALMENTE LAS SEMILLAS DE GIRASOL (PIPAS):
    - Queda TERMINANTEMENTE PROHIBIDO incluir semillas de girasol ni pipas. Utiliza almendras, nueces, cacahuates, pepitas de calabaza, chía, ajonjolí o pistaches.
-5. REGLA ESTRICTA: EVITAR AL MÁXIMO EL USO DE AJO Y PILONCILLO:
+6. REGLA ESTRICTA: EVITAR AL MÁXIMO EL USO DE AJO Y PILONCILLO:
    - A menos que el paciente lo pida explícitamente en sus alimentos favoritos, NO utilices ajo, dientes de ajo ni piloncillo en ningún menú, ingrediente o preparación.
    - Para sazonar utiliza hierbas aromáticas mexicanas frescas (cilantro, epazote, orégano, perejil, laurel, tomillo, comino, pimienta o jugo de limón).
    - Para endulzar utiliza miel de abeja pura, mermelada sin azúcar, fruta natural madura o extracto de vainilla. NUNCA piloncillo.
-6. CONGRUENCIA CULINARIA POR TIEMPO DE COMIDA (${mealName}):
+7. CONGRUENCIA CULINARIA POR TIEMPO DE COMIDA (${mealName}):
    - Asegura total armonía de ingredientes y preparaciones según el tiempo de comida (ej. desayunos matutinos tradicionales con huevo/panela/avena; colaciones frescas con fruta/yogur/oleaginosas/bastones de verdura con limón; comidas con guisados calientes, arroz, leguminosas y ensaladas; cenas ligeras y digestivas al comal).
-7. COHERENCIA CULINARIA Y EN SUS INGREDIENTES: Platillos armónicos, apetecibles y saludables de la cocina cotidiana mexicana donde los ingredientes se combinan con sentido gastronómico real y los títulos reflejan exactamente los ingredientes.`;
+8. COHERENCIA CULINARIA Y EN SUS INGREDIENTES: Platillos armónicos, apetecibles y saludables de la cocina cotidiana mexicana donde los ingredientes se combinan con sentido gastronómico real y los títulos reflejan exactamente los ingredientes.`;
 
     let specificPrefsText = '';
+    if (req.body.likedFoods && Array.isArray(req.body.likedFoods) && req.body.likedFoods.length > 0) {
+      specificPrefsText += `\nAlimentos favoritos del banco de menú: ${req.body.likedFoods.join(', ')}`;
+    }
     if (preferredFoods) specificPrefsText += `\nAlimentos preferidos generales: ${preferredFoods}`;
     if (dislikedFoods) specificPrefsText += `\nAlimentos no preferidos / a evitar: ${dislikedFoods}`;
     if (specificPreferences && (specificPreferences.likes || specificPreferences.dislikes)) {
@@ -797,11 +822,14 @@ Genera UNA ÚNICA OPCIÓN TOTALMENTE NUEVA, CREATIVA Y DELICIOSA (Opción ${opti
 REGLAS CRÍTICAS:
 1. CONGRUENCIA ENTRE TÍTULO E INGREDIENTES: El título debe reflejar los alimentos exactos seleccionados (ej. no llamar omelette si no hay huevo).
 2. SMAE 5TA EDICIÓN: Porciones caseras y gramajes rigurosamente apegados al SMAE 5ta edición.
-3. PREFERENCIAS DEL PACIENTE:
-   - ALIMENTOS PREFERIDOS: Incorpóralos con prioridad absoluta si coinciden con los grupos equivalentes asignados.
+3. SENTIDO COMÚN CULINARIO Y ALIMENTOS BÁSICOS FÁCILES:
+   - PROHIBIDO harinas crudas (harina de maíz nixtamalizada, Maseca, harina de trigo, fécula, maicena) con pollo, pechuga, bistec, pescado, huevo o queso. Usa tortillas comaleadas, arroz al vapor, papas cocidas, tostadas horneadas o pan integral.
+   - PROHIBIDO semillas de calabaza (pepitas) sobre pan tostado o sándwiches. Si hay pan y Aceites con proteína, usa crema de cacahuate 100% natural sin azúcar para untar en el pan, o sirve almendras/nueces para acompañar por separado con fruta o yogur.
+4. PREFERENCIAS DEL PACIENTE Y BANCO DE MENÚS:
+   - ALIMENTOS PREFERIDOS Y BANCO DE MENÚS: Incorpóralos con prioridad absoluta si coinciden con los grupos equivalentes asignados.
    - ALIMENTOS NO PREFERIDOS / AVERSIONES: TERMINANTEMENTE PROHIBIDO incluir estos ingredientes o derivados.
    - EXCLUSIÓN TOTAL DE SEMILLAS DE GIRASOL (PIPAS): NUNCA incluir semillas de girasol ni derivados. Usar almendras, nueces, cacahuates, pepitas de calabaza, chía, ajonjolí o pistaches.
-4. DISTINCIÓN OBLIGATORIA:
+5. DISTINCIÓN OBLIGATORIA DE GRUPOS (CERO CONFUSIÓN):
    - "Aceites con proteína": Oleaginosas y semillas (Almendras, nueces, cacahuates, pepitas, chía, ajonjolí, pistaches, crema de cacahuate sin azúcar). NUNCA aceites líquidos ni aguacate. Usar como TOPPING crujiente.
    - "Aceite sin Proteína": Aceite de oliva, vegetal, aguacate, aceitunas, crema fresca, mayonesa, mantequilla. NUNCA nueces ni semillas. Nombrar como "(para cocinar / en la preparación)" si se usa en la cocción.
    - "Azúcares sin grasa": Miel de abeja pura, mermelada, azúcar mascabado, gelatina. NUNCA chocolates, nieve de crema ni pastel.
@@ -809,15 +837,18 @@ REGLAS CRÍTICAS:
    - "Jamón y derivados cárnicos": Son AOA (Alimento de Origen Animal), NUNCA sazón ni libre ni verdura.
    - "Cereales con grasa": Granola, galleta de avena casera, puré de papa con mantequilla, pan dulce.
    - "Cereales sin grasa": Tortilla de maíz, arroz al vapor, papa cocida o al vapor con piel, avena en hojuelas, pan integral, tostadas horneadas.
-5. REGLA ESTRICTA: EVITAR AL MÁXIMO EL USO DE AJO Y PILONCILLO:
+6. REGLA ESTRICTA: EVITAR AL MÁXIMO EL USO DE AJO Y PILONCILLO:
    - A menos que el paciente lo pida explícitamente en sus alimentos favoritos, NO utilices ajo, dientes de ajo ni piloncillo en ningún menú, ingrediente o preparación.
    - Para sazonar utiliza hierbas aromáticas mexicanas frescas (cilantro, epazote, orégano, perejil, laurel, tomillo, comino, pimienta o jugo de limón).
    - Para endulzar utiliza miel de abeja pura, mermelada sin azúcar, fruta natural madura o extracto de vainilla. NUNCA piloncillo.
-6. CONGRUENCIA CULINARIA POR TIEMPO DE COMIDA (${mealName}):
+7. CONGRUENCIA CULINARIA POR TIEMPO DE COMIDA (${mealName}):
    - Asegura total coherencia con el tiempo de comida (desayuno matutino, colación ligera/fresca, comida tradicional caliente con guisado y guarnición, o cena ligera al comal).
-7. NO REPETIR RECETAS: La receta debe ser completamente diferente a las existentes (${existingMenuTitles ? existingMenuTitles.join(', ') : 'ninguna'}).`;
+8. NO REPETIR RECETAS: La receta debe ser completamente diferente a las existentes (${existingMenuTitles ? existingMenuTitles.join(', ') : 'ninguna'}).`;
 
     let specificPrefsText = '';
+    if (req.body.likedFoods && Array.isArray(req.body.likedFoods) && req.body.likedFoods.length > 0) {
+      specificPrefsText += `\nAlimentos favoritos del banco de menú: ${req.body.likedFoods.join(', ')}`;
+    }
     if (preferredFoods) specificPrefsText += `\nAlimentos preferidos generales: ${preferredFoods}`;
     if (dislikedFoods) specificPrefsText += `\nAlimentos no preferidos / a evitar: ${dislikedFoods}`;
     if (specificPreferences && (specificPreferences.likes || specificPreferences.dislikes)) {

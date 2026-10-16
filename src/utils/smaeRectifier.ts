@@ -1040,12 +1040,23 @@ export function rectifyIngredient(
 
   // USER REQUIREMENT: EXCLUDE SUNFLOWER SEEDS ("semillas de girasol" / "pipas") unless explicitly requested
   const userWantsGirasol = preferredTokens.some((t) => t.includes('girasol') || t.includes('pipas'));
-  const normFood = normalizeSearchString(currentFoodName);
+  let normFood = normalizeSearchString(currentFoodName);
   const isSunflower = (normFood.includes('girasol') || normFood.includes('pipas')) && !normFood.includes('aceite');
   if (isSunflower && !userWantsGirasol) {
     const candidates = getCandidatesForGroup(finalGroup, preferredFoods, dislikedFoods);
     if (candidates.length > 0) {
       currentFoodName = candidates[0].name;
+      normFood = normalizeSearchString(currentFoodName);
+    }
+  }
+
+  // USER REQUIREMENT: EXCLUDE RAW FLOURS ("harina de maíz", "maseca", "harina de trigo", "maicena", "fécula")
+  // Cereals in practical menus must be edible staples (tortillas, arroz al vapor, papas cocidas, tostadas horneadas, pan integral)
+  if (finalGroup.includes('Cereal')) {
+    const isFlour = normFood.includes('harina') || normFood.includes('maseca') || normFood.includes('fecula') || normFood.includes('maicena');
+    if (isFlour) {
+      currentFoodName = 'Tortilla de maíz nixtamalizada comaleada';
+      normFood = normalizeSearchString(currentFoodName);
     }
   }
 
@@ -1339,6 +1350,119 @@ export function rectifyMenuOption(
     }
   }
 
+  // USER REQUIREMENT: CULINARY COMMON SENSE PAIRINGS (BÁSICOS Y REALISTAS)
+  // 1. Prohibición total de harinas crudas (harina de maíz, maseca, harina de trigo, fécula, maicena) en platillos terminados
+  rectifiedIngredients = rectifiedIngredients.map((i) => {
+    const isCereal = i.smaeGroup.includes('Cereal');
+    const n = normalizeSearchString(i.foodName);
+    const isRawFlour = n.includes('harina') || n.includes('maseca') || n.includes('fecula') || n.includes('maicena') || n.includes('almidon');
+    if (isCereal && isRawFlour) {
+      const isSweet = mealName.toLowerCase().includes('desayuno') || mealName.toLowerCase().includes('colacion');
+      const hasFruitOrMilk = rectifiedIngredients.some((ing) => ing.smaeGroup.includes('Fruta') || ing.smaeGroup.includes('Leche'));
+      if (isSweet && hasFruitOrMilk) {
+        return {
+          ...i,
+          foodName: 'Avena integral en hojuelas cocida con canela',
+          exactPortion: formatScaledPortion('1/3 taza', 20, i.equivalentsCount || 1, 'g'),
+          smaeGroup: 'Cereales sin grasa',
+        };
+      }
+      return {
+        ...i,
+        foodName: 'Tortilla de maíz nixtamalizada comaleada',
+        exactPortion: formatScaledPortion('1 pieza', 30, i.equivalentsCount || 1, 'g'),
+        smaeGroup: 'Cereales sin grasa',
+      };
+    }
+    return i;
+  });
+
+  // 2. "No tiene sentido agregar semillas de calabaza con pan tostado":
+  // Si hay pan tostado, pan integral o bolillo y se prescribió Aceites con proteína:
+  const hasBread = rectifiedIngredients.some((i) => {
+    const n = normalizeSearchString(i.foodName);
+    return n.includes('pan integral') || n.includes('pan tostado') || n.includes('pan de caja') || n.includes('bolillo') || n.includes('telera');
+  });
+
+  if (hasBread) {
+    rectifiedIngredients = rectifiedIngredients.map((i) => {
+      const n = normalizeSearchString(i.foodName);
+      const isProteinFat = i.smaeGroup.includes('Aceites y grasas con proteína');
+      const isSeed = n.includes('pepita') || n.includes('semilla') || n.includes('calabaza') || n.includes('chia') || n.includes('ajonjoli');
+      if (isProteinFat || isSeed) {
+        return {
+          ...i,
+          foodName: 'Crema de cacahuate 100% natural sin azúcar (untada en el pan)',
+          exactPortion: formatScaledPortion('2 cucharaditas', 10, i.equivalentsCount || 1, 'g'),
+          smaeGroup: 'Aceites y grasas con proteína',
+          role: 'topping',
+        };
+      }
+      return i;
+    });
+  }
+
+  // 3. Corrección estricta de confusión de grupos de equivalentes (Grasas con proteína vs sin proteína vs azúcares)
+  rectifiedIngredients = rectifiedIngredients.map((i) => {
+    const n = normalizeSearchString(i.foodName);
+
+    // Aceites con proteína (deben ser oleaginosas o semillas; nunca aceite líquido ni aguacate)
+    if (i.smaeGroup === 'Aceites y grasas con proteína') {
+      const isPureFat = n.includes('aceite') || n.includes('aguacate') || n.includes('aceituna') || n.includes('crema') || n.includes('mayonesa') || n.includes('mantequilla');
+      if (isPureFat) {
+        return {
+          ...i,
+          foodName: 'Almendras naturales fileteadas tostadas (topping)',
+          exactPortion: formatScaledPortion('10 piezas', 12, i.equivalentsCount || 1, 'g'),
+          smaeGroup: 'Aceites y grasas con proteína',
+          role: 'topping',
+        };
+      }
+    }
+
+    // Aceites sin proteína (deben ser grasas puras de cocción o mesa; nunca nueces ni semillas)
+    if (i.smaeGroup === 'Aceites y grasas sin proteína') {
+      const isNutOrSeed = n.includes('almendra') || n.includes('nuez') || n.includes('cacahuate') || n.includes('pistache') || n.includes('chia') || n.includes('pepita') || n.includes('ajonjoli') || n.includes('semilla');
+      if (isNutOrSeed) {
+        return {
+          ...i,
+          foodName: 'Aceite de oliva extra virgen (en la preparación / para cocinar)',
+          exactPortion: formatScaledPortion('1 cdita', 5, i.equivalentsCount || 1, 'ml'),
+          smaeGroup: 'Aceites y grasas sin proteína',
+          role: 'coccion',
+        };
+      }
+    }
+
+    // Azúcares sin grasa (miel, mermelada; nunca chocolates, nutella o helados con grasa)
+    if (i.smaeGroup === 'Azúcares sin grasa') {
+      const hasFat = n.includes('chocolate') || n.includes('nutella') || n.includes('cacao') || n.includes('mazapan') || n.includes('helado') || n.includes('pastel');
+      if (hasFat) {
+        return {
+          ...i,
+          foodName: 'Miel de abeja pura mexicana',
+          exactPortion: formatScaledPortion('2 cditas', 10, i.equivalentsCount || 1, 'g'),
+          smaeGroup: 'Azúcares sin grasa',
+        };
+      }
+    }
+
+    // Azúcares con grasa (chocolate, mazapán, nutella; nunca miel pura ni azúcar de mesa)
+    if (i.smaeGroup === 'Azúcares con grasa') {
+      const isPureSugar = (n.includes('miel') || n.includes('azucar') || n.includes('mermelada') || n.includes('gelatina')) && !n.includes('chocolate');
+      if (isPureSugar) {
+        return {
+          ...i,
+          foodName: 'Chocolate amargo 70% cacao artesanal',
+          exactPortion: formatScaledPortion('1 cuadrito', 15, i.equivalentsCount || 1, 'g'),
+          smaeGroup: 'Azúcares con grasa',
+        };
+      }
+    }
+
+    return i;
+  });
+
   const updatedOption: MenuOption = {
     ...option,
     ingredients: rectifiedIngredients,
@@ -1577,6 +1701,14 @@ export function getCandidatesForGroup(
       if (!userWantsGirasol) {
         const isSunflower = (key.includes('girasol') || key.includes('pipas')) && !key.includes('aceite');
         if (isSunflower) continue;
+      }
+
+      // CRITICAL COMMON SENSE FOR CEREALS:
+      // Exclude raw dry flours ("harina de maíz", "maseca", "harina de trigo", "fécula", "maicena")
+      // In meals, cereals must be edible staples: tortillas de maíz, arroz, papas, tostadas, avena, pan, elote, pasta.
+      if (canonicalGroup === 'Cereales sin grasa' || canonicalGroup === 'Cereales con grasa') {
+        const isRawFlour = key.includes('harina') || key.includes('maseca') || key.includes('fecula') || key.includes('maicena');
+        if (isRawFlour) continue;
       }
 
       // CRITICAL COMMON SENSE 1:

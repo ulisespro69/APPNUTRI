@@ -86,7 +86,8 @@ const AnthropometricMacroFrameComponent: React.FC<AnthropometricMacroFrameProps>
     patientInfo.girths?.brazoContraido ||
     patientInfo.girths?.cinturaMinima ||
     patientInfo.girths?.caderasMaximo ||
-    patientInfo.girths?.pantorrillaMaximo
+    patientInfo.girths?.pantorrillaMaximo ||
+    patientInfo.girths?.muslo
   );
 
   const hasBreadths = !!(
@@ -300,7 +301,14 @@ const AnthropometricMacroFrameComponent: React.FC<AnthropometricMacroFrameProps>
               </span>
             </div>
             <div className="bg-rose-50/60 border border-rose-200/80 rounded p-1.5">
-              <span className="text-rose-800 font-bold block">Masa Muscular</span>
+              <span className="text-rose-800 font-bold block flex items-center justify-between">
+                <span>Masa Muscular</span>
+                {patientInfo.useLeeFormula && (
+                  <span className="text-[9px] font-semibold text-rose-700 bg-rose-100/80 px-1 rounded">
+                    Lee
+                  </span>
+                )}
+              </span>
               <span className="font-extrabold text-slate-900">
                 {patientInfo.musclePercent ? `${patientInfo.musclePercent}%` : '—'}
               </span>

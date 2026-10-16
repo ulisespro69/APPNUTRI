@@ -598,6 +598,16 @@ export function synthesizePreparation(title: string, ingredients: SMAEIngredient
 3. Servir con salsa mexicana natural sin grasa adicional.`;
   }
 
+  // Toast / Sandwich / Bread
+  if (cerStr.includes('pan') || cerStr.includes('bolillo') || cerStr.includes('telera') || cleanStr(title).includes('sandwich') || cleanStr(title).includes('tostado')) {
+    const spreadStep = toppingName && (toppingName.includes('crema') || toppingName.includes('aguacate') || toppingName.includes('mantequilla'))
+      ? `Untar ${toppingName} sobre el pan tostado.`
+      : toppingName ? `Acompañar con las ${toppingName} servidas en un tazón aparte como botana crujiente.` : '';
+    return `1. Tostar ligeramente el pan al comal hasta que quede dorado y crujiente.
+2. Preparar el acompañamiento o relleno (${protStr || 'proteína'} y ${vegStr || 'vegetales'}).
+3. Montar de forma armónica y disfrutar. ${spreadStep}`.trim();
+  }
+
   // Oatmeal
   if (cerStr.includes('avena')) {
     const toppingStep = toppingName

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
-  Crosshair,
   Download,
   Maximize2,
   X,
@@ -779,11 +778,8 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
         <div className="lg:col-span-6 bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-4 shadow-2xs flex flex-col justify-between items-center text-center">
           {/* Barra de Controles y Herramientas de la Somatocarta */}
           <div className="w-full flex flex-wrap items-center justify-between gap-1.5 pb-2.5 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <Crosshair className="w-4 h-4 text-indigo-600" />
-              <span className="text-xs sm:text-sm font-black text-slate-900 tracking-wide">
-                Somatocarta Oficial
-              </span>
+            <div className="text-xs sm:text-sm font-black text-slate-900 tracking-wide">
+              Somatocarta
             </div>
 
             {/* Coordenadas o estado */}
@@ -853,9 +849,8 @@ export const SomatotypeCard: React.FC<SomatotypeCardProps> = ({
             {/* Cabecera del Modal */}
             <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-2">
-                <Crosshair className="w-4 h-4 text-indigo-600" />
                 <span className="text-xs font-extrabold text-slate-900">
-                  Somatocarta Oficial Ampliada (Heath-Carter / ISAK)
+                  Somatocarta Ampliada (Heath-Carter / ISAK)
                 </span>
                 <span className="text-3xs font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900">
                   X: {displayX}, Y: {displayY}

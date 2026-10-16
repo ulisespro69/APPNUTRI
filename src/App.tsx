@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { NutritionSummaryBar } from './components/NutritionSummaryBar';
 import { SmaeTable } from './components/SmaeTable';
@@ -258,6 +258,50 @@ export default function App() {
     setTableState(presetData);
   }, []);
 
+  // Persistent approved foods bank to sustainably feed future menu generations
+  const [approvedFoodsBank, setApprovedFoodsBank] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('smae_approved_foods_bank');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  // Extract foods the user liked from currently selected meal options to sustainably feed the menu bank
+  const getLikedFoodsFromSelection = useCallback((): string[] => {
+    if (!generatedPlan?.meals) return [];
+    const liked = new Set<string>();
+    generatedPlan.meals.forEach((m) => {
+      const letters = normalizeOptionSelection(selectedMealOptions[m.mealName]);
+      letters.forEach((letCode) => {
+        const opt = letCode === 'A' ? m.optionA : letCode === 'B' ? m.optionB : m.optionC;
+        if (opt?.ingredients) {
+          opt.ingredients.forEach((ing) => {
+            if (ing.foodName && !ing.foodName.includes('libre') && !ing.foodName.includes('gusto')) {
+              liked.add(ing.foodName);
+            }
+          });
+        }
+      });
+    });
+    return Array.from(liked);
+  }, [generatedPlan, selectedMealOptions]);
+
+  // Feed the bank whenever user selects or keeps options
+  useEffect(() => {
+    const currentLiked = getLikedFoodsFromSelection();
+    if (currentLiked.length > 0) {
+      setApprovedFoodsBank((prev) => {
+        const merged = Array.from(new Set([...prev, ...currentLiked]));
+        try {
+          localStorage.setItem('smae_approved_foods_bank', JSON.stringify(merged));
+        } catch (e) {}
+        return merged;
+      });
+    }
+  }, [selectedMealOptions, getLikedFoodsFromSelection]);
+
   const buildDietNotes = (info: PatientInfo) => {
     const bmi = calculateBmiInfo(info.height, info.weight);
     const anthropometrics = [
@@ -372,6 +416,7 @@ export default function App() {
           dietNotes: buildDietNotes(patientInfo),
           preferredFoods: prefList,
           dislikedFoods: dislikeList,
+          likedFoods: approvedFoodsBank,
           mealPreferences: patientInfo.mealPreferences,
           proteinSupplement: patientInfo.proteinSupplement,
           manualNutrientEntry: patientInfo.manualNutrientEntry,
@@ -522,6 +567,7 @@ export default function App() {
           dietNotes: buildDietNotes(patientInfo),
           preferredFoods: prefList,
           dislikedFoods: dislikeList,
+          likedFoods: approvedFoodsBank,
           specificPreferences: patientInfo.mealPreferences?.[column.key],
           existingMenuTitles,
           keptOptions,
@@ -621,6 +667,7 @@ export default function App() {
           dietNotes: buildDietNotes(patientInfo),
           preferredFoods: prefList,
           dislikedFoods: dislikeList,
+          likedFoods: approvedFoodsBank,
           specificPreferences: patientInfo.mealPreferences?.[column.key],
           existingMenuTitles,
           proteinSupplement: patientInfo.proteinSupplement,

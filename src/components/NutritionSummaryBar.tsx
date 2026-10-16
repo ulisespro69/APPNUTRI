@@ -13,6 +13,7 @@ import {
   calculateBoneMassRocha,
   calculateResidualMass,
   calculateMuscleMass,
+  calculateLeeMuscleMass,
   calculateHarrisBenedict,
   calculateMifflinStJeor,
   calculateKatchMcArdle,
@@ -118,6 +119,16 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     patientInfo.weight
   );
 
+  const leeMuscleMassEst = calculateLeeMuscleMass({
+    height: patientInfo.height,
+    weight: patientInfo.weight,
+    age: patientInfo.age,
+    gender: patientInfo.gender,
+    ethnicity: patientInfo.ethnicity,
+    girths: patientInfo.girths,
+    skinfolds: patientInfo.skinfolds,
+  });
+
   // Helper para comparar valores numéricos y evitar bucles de renderizado
   const isSameVal = (a: any, b: any) => {
     if (a === b) return true;
@@ -128,7 +139,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     return String(a || '').trim() === String(b || '').trim();
   };
 
-  // Aplicar por default la fórmula de Masa Ósea (Rocha), Masa Residual (según sexo) y Masa Muscular (MM = 100 - (MG+MO+MR))
+  // Aplicar por default la fórmula de Masa Ósea (Rocha), Masa Residual (según sexo) y Masa Muscular (Lee et al. si activa, o MM = 100 - (MG+MO+MR))
   useEffect(() => {
     let changed = false;
     const nextInfo = { ...patientInfo };
@@ -157,14 +168,26 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
       changed = true;
     }
 
-    // 3. Masa Muscular: MM = 100 - (MG% + MO% + MR%), y conversión a kg: (MM% * peso) / 100
-    if (muscleMassEst.isComplete && muscleMassEst.musclePercent) {
-      if (!isSameVal(nextInfo.musclePercent, muscleMassEst.musclePercent) || (muscleMassEst.muscleKg && !isSameVal(nextInfo.muscleKg, muscleMassEst.muscleKg))) {
-        nextInfo.musclePercent = muscleMassEst.musclePercent;
-        if (muscleMassEst.muscleKg) {
-          nextInfo.muscleKg = muscleMassEst.muscleKg;
+    // 3. Masa Muscular: Si la fórmula de Lee está activa, usar sus valores; de lo contrario, usar fraccionamiento 4C
+    if (patientInfo.useLeeFormula) {
+      if (leeMuscleMassEst.isComplete && leeMuscleMassEst.muscleKg) {
+        if (!isSameVal(nextInfo.muscleKg, leeMuscleMassEst.muscleKg) || (leeMuscleMassEst.musclePercent && !isSameVal(nextInfo.musclePercent, leeMuscleMassEst.musclePercent))) {
+          nextInfo.muscleKg = leeMuscleMassEst.muscleKg;
+          if (leeMuscleMassEst.musclePercent) {
+            nextInfo.musclePercent = leeMuscleMassEst.musclePercent;
+          }
+          changed = true;
         }
-        changed = true;
+      }
+    } else {
+      if (muscleMassEst.isComplete && muscleMassEst.musclePercent) {
+        if (!isSameVal(nextInfo.musclePercent, muscleMassEst.musclePercent) || (muscleMassEst.muscleKg && !isSameVal(nextInfo.muscleKg, muscleMassEst.muscleKg))) {
+          nextInfo.musclePercent = muscleMassEst.musclePercent;
+          if (muscleMassEst.muscleKg) {
+            nextInfo.muscleKg = muscleMassEst.muscleKg;
+          }
+          changed = true;
+        }
       }
     }
 
@@ -181,6 +204,10 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     muscleMassEst.isComplete,
     muscleMassEst.musclePercent,
     muscleMassEst.muscleKg,
+    leeMuscleMassEst.isComplete,
+    leeMuscleMassEst.muscleKg,
+    leeMuscleMassEst.musclePercent,
+    patientInfo.useLeeFormula,
     patientInfo.boneKg,
     patientInfo.bonePercent,
     patientInfo.residualKg,
@@ -210,6 +237,14 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     parseFloat(String(patientInfo.musclePercent).replace(',', '.')) === parseFloat(String(muscleMassEst.musclePercent).replace(',', '.'))
   );
 
+  const isLeeActive = Boolean(
+    patientInfo.useLeeFormula &&
+    leeMuscleMassEst.isComplete &&
+    leeMuscleMassEst.muscleKg &&
+    patientInfo.muscleKg &&
+    isSameVal(patientInfo.muscleKg, leeMuscleMassEst.muscleKg)
+  );
+
   const waistVal = parseFloat(patientInfo.girths?.cinturaMinima || '');
   const hipVal = parseFloat(patientInfo.girths?.caderasMaximo || '');
   const whr = !isNaN(waistVal) && !isNaN(hipVal) && hipVal > 0
@@ -232,6 +267,27 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
     return null;
   })();
 
+  const boneKgNum = (() => {
+    const raw = parseFloat(patientInfo.boneKg?.toString().replace(',', '.') || '');
+    if (!isNaN(raw) && raw > 0) return raw;
+    if (rochaBoneMass.boneKg) return parseFloat(rochaBoneMass.boneKg);
+    return null;
+  })();
+
+  const residualKgNum = (() => {
+    const raw = parseFloat(patientInfo.residualKg?.toString().replace(',', '.') || '');
+    if (!isNaN(raw) && raw > 0) return raw;
+    if (residualMassEst.residualKg) return parseFloat(residualMassEst.residualKg);
+    return null;
+  })();
+
+  const leeMuscleKgNum = (() => {
+    const raw = parseFloat(patientInfo.muscleKg?.toString().replace(',', '.') || '');
+    if (!isNaN(raw) && raw > 0) return raw;
+    if (leeMuscleMassEst.muscleKg) return parseFloat(leeMuscleMassEst.muscleKg);
+    return null;
+  })();
+
   const fatFreeMassKg = (() => {
     if (patientWeightNum > 0 && patientFatKgNum !== null) {
       const diff = patientWeightNum - patientFatKgNum;
@@ -248,10 +304,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
   })();
 
   const selectedActivityFactor = patientInfo.activityFactor || 1.2;
-  const selectedWeightStrategy: 'real' | 'ideal' | 'adjusted' =
-    patientInfo.weightStrategy === 'ideal' || patientInfo.weightStrategy === 'adjusted'
-      ? patientInfo.weightStrategy
-      : 'real';
+  const selectedWeightStrategy: 'real' = 'real';
   const selectedCaloricFormula =
     patientInfo.caloricFormula === 'mifflin-st-jeor'
       ? 'mifflin-st-jeor'
@@ -1262,11 +1315,6 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                         <span className="w-2 h-2 rounded-full bg-teal-600"></span>
                         Circunferencias Corporales
                       </span>
-                      {whr && (
-                        <span className="hidden">
-                          ICC (Cintura/Cadera): {whr}
-                        </span>
-                      )}
                     </div>
 
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
@@ -1348,9 +1396,6 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
               <div className="flex items-center gap-1.5">
                 <span className="text-3xs font-bold uppercase tracking-wider text-slate-700">
                   Composición Corporal (Modelo 4 Componentes)
-                </span>
-                <span className="text-3xs font-semibold px-1.5 py-0.2 rounded bg-emerald-100/80 text-emerald-800 border border-emerald-200">
-                  Opcional
                 </span>
               </div>
 
@@ -1605,7 +1650,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                             if (!isNaN(w) && w > 0 && !isNaN(p)) {
                               newKg = ((p * w) / 100).toFixed(2);
                             }
-                            onPatientInfoChange({ ...patientInfo, musclePercent: newPct, muscleKg: newKg });
+                            onPatientInfoChange({ ...patientInfo, musclePercent: newPct, muscleKg: newKg, useLeeFormula: false });
                           }}
                           className="w-full px-2 py-1.5 text-xs text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-rose-500 focus:bg-white pr-6 font-semibold"
                         />
@@ -1638,7 +1683,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                             if (!isNaN(w) && w > 0 && !isNaN(k)) {
                               newPct = ((k / w) * 100).toFixed(1);
                             }
-                            onPatientInfoChange({ ...patientInfo, muscleKg: newKg, musclePercent: newPct });
+                            onPatientInfoChange({ ...patientInfo, muscleKg: newKg, musclePercent: newPct, useLeeFormula: false });
                           }}
                           className="w-full px-2 py-1.5 text-xs text-slate-800 bg-slate-50 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-rose-500 focus:bg-white pr-7 font-semibold"
                         />
@@ -1666,15 +1711,12 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                         >
                           {fatFreeMassKg !== null ? `${fatFreeMassKg} kg` : '— kg'}
                         </span>
-                        {fatFreeMassPercent !== null && (
-                          <span className="text-3xs font-bold text-rose-800 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-200">
-                            {fatFreeMassPercent}%
-                          </span>
-                        )}
                       </div>
                     </div>
                     <div className="text-[9px] text-slate-500 mt-1 flex items-center justify-between px-1">
-                      <span className="font-semibold text-rose-950">Resultado: peso − kg de grasa</span>
+                      <span className="font-semibold text-rose-950">
+                        Resultado: peso − kg de grasa
+                      </span>
                       {patientWeightNum > 0 && patientFatKgNum !== null ? (
                         <span className="font-medium text-slate-600">
                           {patientWeightNum} kg − {patientFatKgNum.toFixed(1)} kg
@@ -1687,105 +1729,165 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                     </div>
                   </div>
 
-                  {/* Sección Inferior: Fórmula Antropométrica */}
-                  <div className="hidden pt-2 border-t border-rose-200/70 flex-1 flex flex-col justify-between">
+                  {/* Sección Inferior: FÓRMULA DE LEE ET AL. (2000) */}
+                  <div className="pt-2 border-t border-rose-200/70 flex-1 flex flex-col justify-between mt-2">
                     <div className="flex items-center justify-between mb-1.5 min-h-[22px]">
-                      <span className="text-[10px] font-bold text-rose-950 uppercase tracking-wider">
-                        Fórmula Antropométrica
+                      <span className="text-[10px] font-bold text-rose-950 uppercase tracking-wider flex items-center gap-1">
+                        <Sparkles className="w-2.5 h-2.5 text-rose-600" />
+                        Fórmula de Lee (2000)
                       </span>
-                      <span className="text-[9px] text-rose-800 font-medium">
-                        Ecuación de fraccionamiento
-                      </span>
+                      <button
+                        type="button"
+                        id="btn-toggle-lee-active"
+                        onClick={() => {
+                          const nextState = !patientInfo.useLeeFormula;
+                          const next = {
+                            ...patientInfo,
+                            useLeeFormula: nextState,
+                            showThighGirthOption: nextState ? true : patientInfo.showThighGirthOption,
+                          };
+                          if (nextState && leeMuscleMassEst.isComplete && leeMuscleMassEst.muscleKg) {
+                            next.muscleKg = leeMuscleMassEst.muscleKg;
+                            if (leeMuscleMassEst.musclePercent) {
+                              next.musclePercent = leeMuscleMassEst.musclePercent;
+                            }
+                          }
+                          onPatientInfoChange(next);
+                        }}
+                        className={`text-[9px] font-bold px-2 py-0.5 rounded transition-all cursor-pointer border ${
+                          patientInfo.useLeeFormula
+                            ? 'bg-rose-700 text-white border-rose-800 shadow-2xs'
+                            : 'bg-white hover:bg-rose-50 text-rose-700 border-rose-300'
+                        }`}
+                        title="Activar o desactivar el cálculo automático de la Fórmula de Lee"
+                      >
+                        {patientInfo.useLeeFormula ? '✓ Activada' : 'Activar'}
+                      </button>
                     </div>
 
-                    <div className="h-[210px] flex flex-col justify-between gap-2">
-                      <div className="hidden p-2.5 rounded-lg bg-rose-50/70 border border-rose-200/70 space-y-1.5 text-xs">
-                        <div className="text-[11px] font-bold text-rose-950 flex items-center justify-between">
-                          <span>Ecuación de 4 Componentes:</span>
-                        </div>
-                        <div className="text-[10px] font-semibold text-rose-900 bg-white/80 p-1.5 rounded border border-rose-200/60 leading-relaxed">
-                          100 - (Masa Grasa + Masa Ósea + Masa Residual)
-                        </div>
-                        <div className="grid grid-cols-3 gap-1 pt-1 text-center text-3xs">
-                          <div className="bg-white/80 rounded p-1 border border-rose-100">
-                            <span className="text-slate-500 block truncate">Grasa</span>
-                            <strong className="text-amber-900 font-bold">{patientInfo.fatPercent || '—'}%</strong>
+                    <div className="space-y-2">
+                      {/* Tarjeta de Controles de la Fórmula de Lee */}
+                      <div className="p-2 rounded-lg bg-rose-50/70 border border-rose-200/80 text-3xs space-y-1.5">
+                        {/* Selector de Etnia / Raza */}
+                        <div>
+                          <label className="block text-[9px] font-bold text-rose-950 uppercase mb-1">
+                            Etnia / Raza:
+                          </label>
+                          <div className="grid grid-cols-3 gap-1">
+                            {[
+                              { key: 'caucasico', label: 'Caucásico', val: '0' },
+                              { key: 'afrodescendiente', label: 'Afrodesc.', val: '+1' },
+                              { key: 'asiatico', label: 'Asiático', val: '-1.2' },
+                            ].map((eth) => {
+                              const isEthSelected =
+                                patientInfo.ethnicity === eth.key ||
+                                (!patientInfo.ethnicity && eth.key === 'caucasico');
+                              return (
+                                <button
+                                  key={eth.key}
+                                  type="button"
+                                  onClick={() =>
+                                    onPatientInfoChange({
+                                      ...patientInfo,
+                                      ethnicity: eth.key,
+                                    })
+                                  }
+                                  className={`py-1 px-1 text-[9px] font-bold rounded border transition-all text-center cursor-pointer ${
+                                    isEthSelected
+                                      ? 'bg-rose-700 text-white border-rose-800 shadow-2xs'
+                                      : 'bg-white text-slate-700 hover:bg-rose-50 border-slate-200'
+                                  }`}
+                                  title={`${eth.label}: factor ${eth.val}`}
+                                >
+                                  <div>{eth.label}</div>
+                                  <div className="text-[8px] opacity-90">{eth.val}</div>
+                                </button>
+                              );
+                            })}
                           </div>
-                          <div className="bg-white/80 rounded p-1 border border-rose-100">
-                            <span className="text-slate-500 block truncate">Ósea</span>
-                            <strong className="text-sky-900 font-bold">{patientInfo.bonePercent || '—'}%</strong>
+                        </div>
+
+                        {/* Circunferencia de Muslo e Input */}
+                        <div className="pt-1 border-t border-rose-100">
+                          <div className="flex items-center justify-between gap-1 mb-1">
+                            <span className="text-[9px] font-bold text-rose-950">
+                              Circunferencia de Muslo (cm):
+                            </span>
                           </div>
-                          <div className="bg-white/80 rounded p-1 border border-rose-100">
-                            <span className="text-slate-500 block truncate">Residual</span>
-                            <strong className="text-purple-900 font-bold">{patientInfo.residualPercent || '—'}%</strong>
+                          <div className="relative">
+                            <input
+                              id="input-quick-girth-muslo"
+                              type="text"
+                              inputMode="decimal"
+                              placeholder="Ej. 54.5"
+                              value={patientInfo.girths?.muslo || ''}
+                              onChange={(e) => {
+                                handleGirthChange('muslo', e.target.value);
+                              }}
+                              className="w-full px-2 py-1 text-xs text-slate-800 bg-white border border-rose-200 rounded focus:outline-hidden focus:ring-1 focus:ring-rose-500 pr-7 font-medium"
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-3xs font-bold text-slate-400 pointer-events-none">
+                              cm
+                            </span>
                           </div>
                         </div>
+
+
                       </div>
 
+                      {/* Tarjeta de Resultado de la Fórmula de Lee */}
                       <div
-                        id="formula-card-muscle"
+                        id="formula-card-lee-result"
                         onClick={
-                          muscleMassEst.isComplete && muscleMassEst.musclePercent
+                          leeMuscleMassEst.isComplete && leeMuscleMassEst.muscleKg
                             ? () => {
                                 onPatientInfoChange({
                                   ...patientInfo,
-                                  musclePercent: muscleMassEst.musclePercent!,
-                                  muscleKg: muscleMassEst.muscleKg || patientInfo.muscleKg,
+                                  useLeeFormula: true,
+                                  muscleKg: leeMuscleMassEst.muscleKg!,
+                                  musclePercent: leeMuscleMassEst.musclePercent || patientInfo.musclePercent,
                                 });
                               }
                             : undefined
                         }
-                        className={`hidden p-2 rounded-lg border text-left transition-all ${
-                          muscleMassEst.isComplete
-                            ? isMuscleActive
+                        className={`p-2 rounded-lg border text-left transition-all ${
+                          leeMuscleMassEst.isComplete
+                            ? isLeeActive
                               ? 'bg-rose-100/90 border-rose-400 ring-1 ring-rose-400 cursor-pointer shadow-xs'
                               : 'bg-rose-50/90 hover:bg-rose-100 border-rose-300/80 cursor-pointer shadow-2xs hover:border-rose-400 group'
                             : 'bg-slate-50/80 border-slate-200/70 opacity-80 cursor-default'
                         }`}
                         title={
-                          muscleMassEst.isComplete
-                            ? `Fórmula por defecto activa: ${muscleMassEst.musclePercent}% (${muscleMassEst.muscleKg || '—'} kg)`
-                            : muscleMassEst.missingText || ''
+                          leeMuscleMassEst.isComplete
+                            ? `Fórmula de Lee: ${leeMuscleMassEst.muscleKg} kg (${leeMuscleMassEst.musclePercent || '—'}%)\nClic para aplicar y activar`
+                            : 'Faltan variables para la Fórmula de Lee'
                         }
                       >
                         <div className="flex items-center justify-between gap-1">
                           <div className="flex items-center gap-1 min-w-0">
-                            <span className={`text-[10px] font-bold truncate ${muscleMassEst.isComplete ? 'text-rose-950' : 'text-slate-700'}`}>
-                              Fraccionamiento Corporal
+                            <span className={`text-[10px] font-bold truncate ${leeMuscleMassEst.isComplete ? 'text-rose-950' : 'text-slate-700'}`}>
+                              Masa Muscular (Lee)
                             </span>
-                            <span className="text-[8px] font-semibold px-1 py-0.2 rounded bg-rose-100 text-rose-800 border border-rose-200 shrink-0">
-                              Masa Muscular
-                            </span>
-                            {isMuscleActive && (
+                            {isLeeActive && (
                               <span className="text-[8px] font-bold px-1 py-0.2 rounded bg-rose-600 text-white shrink-0">
-                                Activo por defecto
+                                Activa
                               </span>
                             )}
                           </div>
-                          {muscleMassEst.isComplete ? (
+                          {leeMuscleMassEst.isComplete ? (
                             <div className="flex items-center gap-1 shrink-0">
                               <span className="text-xs font-black text-rose-900 bg-rose-200/70 px-1.5 py-0.5 rounded border border-rose-300 group-hover:scale-105 transition-transform">
-                                {muscleMassEst.musclePercent}%
+                                {leeMuscleMassEst.muscleKg} kg
                               </span>
-                              {muscleMassEst.muscleKg && (
+                              {leeMuscleMassEst.musclePercent && (
                                 <span className="text-3xs font-bold text-rose-900/90 bg-rose-100 px-1 py-0.5 rounded border border-rose-200">
-                                  {muscleMassEst.muscleKg} kg
+                                  {leeMuscleMassEst.musclePercent}%
                                 </span>
                               )}
                             </div>
                           ) : (
                             <span className="text-3xs font-medium text-slate-400 shrink-0">
-                              —%
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[9px] mt-0.5 flex items-center justify-between gap-1">
-                          <span className={`truncate ${muscleMassEst.isComplete ? 'text-rose-800 font-medium' : 'text-slate-400 italic'}`}>
-                            {muscleMassEst.isComplete ? muscleMassEst.detailText : muscleMassEst.missingText}
-                          </span>
-                          {muscleMassEst.isComplete && !isMuscleActive && (
-                            <span className="text-[9px] text-rose-700 font-bold opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                              Usar ↵
+                              — kg
                             </span>
                           )}
                         </div>
@@ -2282,7 +2384,7 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                         </span>
                       </div>
                       <p className="text-2xs text-slate-500 mt-0.5">
-                        MB/TMB con selección de peso ({selectedWeightStrategy === 'real' ? 'Peso Real' : selectedWeightStrategy === 'ideal' ? 'Peso Ideal' : selectedWeightStrategy === 'adjusted' ? 'Peso Ajustado' : 'Recomendación IMC'}) y factor de actividad ({selectedActivityFactor}).
+                        MB/TMB calculada con el peso agregado del paciente y factor de actividad ({selectedActivityFactor}).
                       </p>
                     </div>
                   </div>
@@ -2628,122 +2730,6 @@ const NutritionSummaryBarComponent: React.FC<NutritionSummaryBarProps> = ({
                     </div>
                   </div>
 
-                {/* 1. Criterio de Selección de Peso */}
-                <div className="space-y-2">
-                  <div className="bg-amber-100/60 border border-amber-200/90 rounded-lg p-2.5 text-slate-800">
-                    <div className="flex items-start gap-2">
-                      <Info className="w-3.5 h-3.5 text-amber-700 mt-0.5 shrink-0" />
-                      <div className="text-2xs leading-relaxed">
-                        <span className="font-extrabold text-amber-950">Criterio Clínico de Selección de Peso: </span>
-                        Usaremos el peso actual sólo en personas con un IMC normal. Si el IMC es bajo (en casos de desnutrición) emplearemos el peso ideal. Si el IMC es alto (en casos de sobrepeso u obesidad) emplearemos el peso ajustado.
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Botones de Selección de Peso */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    {/* Opción 1: Peso Real (Inicio / Predeterminado) */}
-                    <button
-                      id="btn-weight-strategy-real"
-                      type="button"
-                      onClick={() => onPatientInfoChange({ ...patientInfo, weightStrategy: 'real' })}
-                      className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
-                        selectedWeightStrategy === 'real'
-                          ? 'bg-amber-50/90 border-amber-500 ring-2 ring-amber-500/20 shadow-xs'
-                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-3xs font-black uppercase tracking-wider text-slate-600">
-                          • Peso Real
-                        </span>
-                        {selectedWeightStrategy === 'real' ? (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-200 text-amber-900 border border-amber-300">
-                            Activo (Inicio)
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-medium text-slate-400">
-                            Inicio
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm font-black text-slate-900">
-                        {harrisBenedict.weightDetails.realWeight !== null
-                          ? `${harrisBenedict.weightDetails.realWeight} kg`
-                          : '— kg'}
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-1">
-                        Kg real medido del paciente
-                      </div>
-                    </button>
-
-                    {/* Opción 2: El Peso Ideal */}
-                    <button
-                      id="btn-weight-strategy-ideal"
-                      type="button"
-                      onClick={() => onPatientInfoChange({ ...patientInfo, weightStrategy: 'ideal' })}
-                      className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
-                        selectedWeightStrategy === 'ideal'
-                          ? 'bg-blue-50/90 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
-                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-3xs font-black uppercase tracking-wider text-slate-600">
-                          • El Peso Ideal
-                        </span>
-                        {selectedWeightStrategy === 'ideal' && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-200 text-blue-900 border border-blue-300">
-                            Activo
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm font-black text-slate-900">
-                        {harrisBenedict.weightDetails.idealWeight !== null
-                          ? `${harrisBenedict.weightDetails.idealWeight} kg`
-                          : '— kg'}
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-1" title={harrisBenedict.weightDetails.idealFormulaText}>
-                        {patientInfo.gender === 'Hombre'
-                          ? 'Hombres → Talla² × 23'
-                          : patientInfo.gender === 'Mujer'
-                          ? 'Mujeres → Talla² × 21'
-                          : 'Talla² × (23 ♂ / 21 ♀)'}
-                      </div>
-                    </button>
-
-                    {/* Opción 3: El Peso Ajustado */}
-                    <button
-                      id="btn-weight-strategy-adjusted"
-                      type="button"
-                      onClick={() => onPatientInfoChange({ ...patientInfo, weightStrategy: 'adjusted' })}
-                      className={`text-left p-2.5 rounded-xl border transition-all cursor-pointer ${
-                        selectedWeightStrategy === 'adjusted'
-                          ? 'bg-purple-50/90 border-purple-500 ring-2 ring-purple-500/20 shadow-xs'
-                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-3xs font-black uppercase tracking-wider text-slate-600">
-                          • El Peso Ajustado
-                        </span>
-                        {selectedWeightStrategy === 'adjusted' && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-200 text-purple-900 border border-purple-300">
-                            Activo
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-sm font-black text-slate-900">
-                        {harrisBenedict.weightDetails.adjustedWeight !== null
-                          ? `${harrisBenedict.weightDetails.adjustedWeight} kg`
-                          : '— kg'}
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-1" title={harrisBenedict.weightDetails.adjustedFormulaText}>
-                        (Peso actual – Peso ideal) / 3 + Peso ideal
-                      </div>
-                    </button>
-                  </div>
-                </div>
 
                 {/* 2. Ecuación Harris-Benedict (GEB / TMB) */}
                 <div className="hidden bg-white border border-amber-200/80 rounded-xl p-3 space-y-2">
