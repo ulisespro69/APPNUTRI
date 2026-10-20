@@ -206,3 +206,22 @@ export interface MacroNutrientSummary {
 
 export type MealOptionLetter = 'A' | 'B' | 'C';
 export type MealOptionsSelection = MealOptionLetter[];
+
+export interface SavedPatientRecord {
+  id: string;
+  name: string;
+  date: string;
+  createdAt: string;
+  updatedAt: string;
+  patientInfo: PatientInfo;
+  tableState: Record<string, {
+    desayuno: number;
+    colacion1: number;
+    comida: number;
+    colacion2: number;
+    cena: number;
+  }>;
+  generatedPlan?: GeneratedPlan | null;
+  selectedMealOptions?: Record<string, MealOptionLetter[]>;
+  totalKcal?: number;
+}

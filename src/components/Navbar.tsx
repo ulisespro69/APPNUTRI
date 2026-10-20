@@ -13,6 +13,8 @@ interface NavbarProps {
   isExportingWord?: boolean;
   onExportPdf: () => void;
   isExportingPdf?: boolean;
+  onToggleSidebar?: () => void;
+  isSidebarCollapsed?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -23,13 +25,27 @@ export const Navbar: React.FC<NavbarProps> = ({
   isExportingWord = false,
   onExportPdf,
   isExportingPdf = false,
+  onToggleSidebar,
+  isSidebarCollapsed,
 }) => {
   return (
     <header className="bg-white border-b border-emerald-100 sticky top-0 z-30 shadow-xs no-print">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 sm:h-20 gap-2 sm:gap-4">
-          {/* Brand Logo & Title */}
+          {/* Brand Logo & Title & Sidebar Toggle */}
           <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
+            {onToggleSidebar && (
+              <button
+                type="button"
+                onClick={onToggleSidebar}
+                className="p-2 -ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer lg:hidden"
+                title="Abrir menú y pacientes"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
             <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-tr from-emerald-700 via-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-sm shadow-emerald-200 overflow-hidden relative">
               <span
                 style={{ fontSize: '38px', textAlign: 'center', lineHeight: '41px' }}

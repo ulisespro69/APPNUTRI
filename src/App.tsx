@@ -1,5 +1,8 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
+import { PatientsDrawer } from './components/PatientsDrawer';
+import { ConnectModal } from './components/ConnectModal';
 import { NutritionSummaryBar } from './components/NutritionSummaryBar';
 import { SmaeTable } from './components/SmaeTable';
 import { PrintableEquivalentsTable } from './components/PrintableEquivalentsTable';
@@ -7,13 +10,14 @@ import { AnthropometricMacroFrame } from './components/AnthropometricMacroFrame'
 import { GeneratedMealCard } from './components/GeneratedMealCard';
 import { SmaeGuideModal } from './components/SmaeGuideModal';
 import { INITIAL_TABLE_STATE, SMAE_GROUPS, MEAL_COLUMNS, TableGridState } from './data/smaeData';
-import { MealKey, GeneratedPlan, PatientInfo, MealPreference, MealOptionLetter, MenuOption, MealMenu } from './types';
+import { MealKey, GeneratedPlan, PatientInfo, MealPreference, MealOptionLetter, MenuOption, MealMenu, SavedPatientRecord } from './types';
 import { calculateMacros, formatClipboardMenu, calculateRowTotal, normalizeOptionSelection, calculateBmiInfo } from './utils/nutritionCalculations';
 import { buildFallbackFullPlan, buildFallbackMeal } from './utils/smaeFallbackEngine';
 import { rectifyFullPlan, rectifyMealMenu, rectifyMenuOption, ensureMealVariety } from './utils/smaeRectifier';
 import { exportPlanToPdfNative } from './utils/pdfExport';
 import { exportPlanToWord } from './utils/wordExport';
 import { autoDistributeEquivalents } from './utils/autoDistribute';
+import { getSavedPatients, savePatientRecord, deletePatientRecord } from './utils/patientStorage';
 import confetti from 'canvas-confetti';
 
 // Robust JSON request helper that protects against HTML responses (like 502/504 or fallback pages)
@@ -102,6 +106,14 @@ export default function App() {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingWord, setIsExportingWord] = useState(false);
   const [selectedMealOptions, setSelectedMealOptions] = useState<Record<string, MealOptionLetter[]>>({});
+
+  // Patients Management & Left Sidebar States
+  const [savedPatients, setSavedPatients] = useState<SavedPatientRecord[]>(() => getSavedPatients());
+  const [activePatientId, setActivePatientId] = useState<string | null>(null);
+  const [isPatientsDrawerOpen, setIsPatientsDrawerOpen] = useState(false);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [patientSavedToast, setPatientSavedToast] = useState<string | null>(null);
 
   // Pestaña de acciones y exportación oculta por defecto para permitir una mayor exploración de los menús
   // Se despliega al pasar el cursor (hover) y se oculta automáticamente al salir
@@ -252,6 +264,88 @@ export default function App() {
     setOptionHistory({});
     setErrorMsg(null);
   }, []);
+
+  // Save current patient consultation to alphabetical directory
+  const handleSaveCurrentPatient = useCallback(() => {
+    const rawName = (patientInfo.name || '').trim();
+    const displayName = rawName || 'Paciente Sin Nombre';
+
+    const record: SavedPatientRecord = {
+      id: activePatientId || `pat_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      name: displayName,
+      date: patientInfo.date || new Date().toISOString().split('T')[0],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      patientInfo: { ...patientInfo, name: displayName },
+      tableState: { ...tableState },
+      generatedPlan: generatedPlan ? { ...generatedPlan } : null,
+      selectedMealOptions: { ...selectedMealOptions },
+      totalKcal: macros?.totalKcal,
+    };
+
+    const updated = savePatientRecord(record);
+    setSavedPatients(updated);
+    setActivePatientId(record.id);
+    setPatientInfo((prev) => ({ ...prev, name: displayName }));
+    setPatientSavedToast(`¡Paciente "${displayName}" guardado exitosamente en el directorio alfabético!`);
+    setTimeout(() => setPatientSavedToast(null), 3500);
+  }, [activePatientId, patientInfo, tableState, generatedPlan, selectedMealOptions, macros]);
+
+  // Load a saved patient from directory into active consultation
+  const handleLoadPatient = useCallback((record: SavedPatientRecord) => {
+    setActivePatientId(record.id);
+    if (record.patientInfo) {
+      setPatientInfo(record.patientInfo);
+    }
+    if (record.tableState) {
+      setTableState(record.tableState);
+    }
+    if (record.generatedPlan) {
+      setGeneratedPlan(record.generatedPlan);
+    } else {
+      setGeneratedPlan(null);
+    }
+    if (record.selectedMealOptions) {
+      setSelectedMealOptions(record.selectedMealOptions);
+    } else {
+      setSelectedMealOptions({});
+    }
+    setOptionHistory({});
+    setPatientSavedToast(`Consulta de "${record.name}" cargada correctamente.`);
+    setTimeout(() => setPatientSavedToast(null), 3500);
+  }, []);
+
+  // Start a new blank patient consultation
+  const handleNewPatient = useCallback(() => {
+    handleResetTable();
+    setActivePatientId(null);
+    setPatientSavedToast('Nueva consulta iniciada con paciente en blanco.');
+    setTimeout(() => setPatientSavedToast(null), 3000);
+  }, [handleResetTable]);
+
+  // Delete a patient from the directory
+  const handleDeletePatient = useCallback((id: string) => {
+    const updated = deletePatientRecord(id);
+    setSavedPatients(updated);
+    if (activePatientId === id) {
+      setActivePatientId(null);
+    }
+  }, [activePatientId]);
+
+  // Apply bioimpedance measurements to patientInfo
+  const handleApplyBioimpedance = useCallback(
+    (data: { weight?: string; fatPercent?: string; muscleKg?: string }) => {
+      setPatientInfo((prev) => ({
+        ...prev,
+        ...(data.weight ? { weight: data.weight } : {}),
+        ...(data.fatPercent ? { fatPercent: data.fatPercent } : {}),
+        ...(data.muscleKg ? { muscleKg: data.muscleKg } : {}),
+      }));
+      setPatientSavedToast('Medidas de bioimpedancia sincronizadas con la consulta.');
+      setTimeout(() => setPatientSavedToast(null), 3000);
+    },
+    []
+  );
 
   // Load preset
   const handleSelectPreset = useCallback((presetData: TableGridState) => {
@@ -856,21 +950,38 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-100/70 text-slate-800">
-      {/* App Header / Navigation */}
-      <Navbar
-        onSelectPreset={handleSelectPreset}
-        onOpenGuide={() => setIsGuideOpen(true)}
-        onResetTable={handleResetTable}
-        hasGeneratedPlan={!!generatedPlan}
-        onExportPdf={handleExportPdf}
-        isExportingPdf={isExportingPdf}
-        onExportWord={handleExportWord}
-        isExportingWord={isExportingWord}
+    <div className="min-h-screen flex bg-slate-100/70 text-slate-800">
+      {/* Barra de lado izquierdo vertical */}
+      <Sidebar
+        onOpenPatients={() => setIsPatientsDrawerOpen(true)}
+        onOpenConnect={() => setIsConnectModalOpen(true)}
+        onNewPatient={handleNewPatient}
+        onSaveCurrentPatient={handleSaveCurrentPatient}
+        savedPatientsCount={savedPatients.length}
+        activePatient={patientInfo}
+        activePatientId={activePatientId}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
       />
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      {/* Columna Principal */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+        {/* App Header / Navigation */}
+        <Navbar
+          onSelectPreset={handleSelectPreset}
+          onOpenGuide={() => setIsGuideOpen(true)}
+          onResetTable={handleResetTable}
+          hasGeneratedPlan={!!generatedPlan}
+          onExportPdf={handleExportPdf}
+          isExportingPdf={isExportingPdf}
+          onExportWord={handleExportWord}
+          isExportingWord={isExportingWord}
+          onToggleSidebar={() => setIsSidebarCollapsed((prev) => !prev)}
+          isSidebarCollapsed={isSidebarCollapsed}
+        />
+
+        {/* Main Content Area */}
+        <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         {/* Prescription & Nutrient Summary Bar */}
         <NutritionSummaryBar
           macros={macros}
@@ -1153,21 +1264,56 @@ export default function App() {
         )}
       </main>
 
+        {/* Footer */}
+        <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-center text-xs text-slate-500 no-print">
+          <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+            <div className="flex items-center gap-2 font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+              <span>Generador de Menús SMAE Pro © {new Date().getFullYear()}</span>
+            </div>
+            <div className="text-slate-400 text-2xs">
+              Desarrollado para Nutriólogas y Profesionales de la Salud
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      {/* Modal Directorio de Pacientes (Guardar y ordenar por orden alfabético A-Z) */}
+      <PatientsDrawer
+        isOpen={isPatientsDrawerOpen}
+        onClose={() => setIsPatientsDrawerOpen(false)}
+        savedPatients={savedPatients}
+        activePatientId={activePatientId}
+        currentPatientInfo={patientInfo}
+        currentTableState={tableState}
+        currentPlan={generatedPlan}
+        currentMealOptions={selectedMealOptions}
+        currentKcal={macros?.totalKcal || 0}
+        onLoadPatient={handleLoadPatient}
+        onSaveCurrentPatient={handleSaveCurrentPatient}
+        onNewPatient={handleNewPatient}
+        onDeletePatient={handleDeletePatient}
+      />
+
+      {/* Modal Conect (Enlace directo y envío por WhatsApp con el paciente) */}
+      <ConnectModal
+        isOpen={isConnectModalOpen}
+        onClose={() => setIsConnectModalOpen(false)}
+        patientInfo={patientInfo}
+        generatedPlan={generatedPlan}
+        selectedMealOptions={selectedMealOptions}
+      />
+
+      {/* Toast Notification for Patient Saved */}
+      {patientSavedToast && (
+        <div className="fixed bottom-6 left-6 sm:left-24 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-bold animate-in fade-in slide-in-from-bottom-4 duration-200 border border-emerald-500/50">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span>{patientSavedToast}</span>
+        </div>
+      )}
+
       {/* SMAE Guide Modal */}
       <SmaeGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-6 mt-12 text-center text-xs text-slate-500 no-print">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <div className="flex items-center gap-2 font-medium">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-            <span>Generador de Menús SMAE Pro © {new Date().getFullYear()}</span>
-          </div>
-          <div className="text-slate-400 text-2xs">
-            Desarrollado para Nutriólogas y Profesionales de la Salud
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
